@@ -1,0 +1,97 @@
+<script setup>
+defineProps({
+  size: {
+    type: [Number, String],
+    default: 24,
+  },
+  accentColor: {
+    type: String,
+    default: "var(--primary-orange, #b85423)",
+  },
+  dialColor: {
+    type: String,
+    default: "var(--text-dark, #1c1917)",
+  },
+  paperColor: {
+    type: String,
+    default: "var(--primary-orange-soft, #fcf4ee)",
+  },
+});
+</script>
+
+<template>
+  <svg
+    :width="size"
+    :height="size"
+    viewBox="0 0 100 100"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    class="chrononote-brand-icon"
+    aria-hidden="true"
+  >
+    <!-- Outer Chronograph Dial Arc -->
+    <path
+      d="M 6.24 19.55 A 58.5 58.5 0 0 1 89.93 87.32"
+      :stroke="dialColor"
+      stroke-width="5.8"
+      stroke-linecap="butt"
+    />
+
+    <!-- Radial Hour Indices -->
+    <g :stroke="dialColor" stroke-width="3" stroke-linecap="butt">
+      <line x1="14.05" y1="24.90" x2="18.50" y2="35.39" />
+      <line x1="49.24" y1="23.36" x2="45.72" y2="34.20" />
+      <line x1="76.82" y1="45.29" x2="67.04" y2="51.17" />
+      <line x1="83.24" y1="79.93" x2="72.01" y2="77.95" />
+    </g>
+
+    <!-- Warm Paper Interior Fill -->
+    <path
+      :fill="paperColor"
+      d="M 36.02 72.05
+         Q 33.16 56.16 24.30 43.02
+         L 28.31 43.58
+         L 28.78 38.25
+         Q 37.59 50.83 41.23 65.77
+         Q 52.16 66.52 61.96 71.43
+         L 57.02 72.65
+         L 57.91 76.58
+         Q 47.66 71.77 36.02 72.05
+         Z"
+    />
+
+    <!-- Sculpted Ribbon-Bookmark & Open-Book Clock Hands -->
+    <path
+      :fill="accentColor"
+      fill-rule="evenodd"
+      d="M 33.19 75.56
+         Q 30.37 55.63 17.98 40.07
+         L 26.46 41.25
+         L 27.22 32.73
+         Q 38.38 46.76 42.86 63.85
+         Q 55.98 65.08 67.50 72.18
+         L 59.46 74.16
+         L 61.30 82.22
+         Q 48.50 74.31 33.19 75.56
+         Z
+         M 36.02 72.05
+         Q 33.16 56.16 24.30 43.02
+         L 28.31 43.58
+         L 28.78 38.25
+         Q 37.59 50.83 41.23 65.77
+         Q 52.16 66.52 61.96 71.43
+         L 57.02 72.65
+         L 57.91 76.58
+         Q 47.66 71.77 36.02 72.05
+         Z"
+    />
+  </svg>
+</template>
+
+<style scoped>
+.chrononote-brand-icon {
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+</style>

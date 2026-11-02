@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: chrononote-personal
+    runtime: docker
+    plan: free
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: AUTO_FALLBACK_SQLITE
+        value: "true"
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: ALLOWED_GOOGLE_EMAILS
+        sync: false
+      - key: AUTH_SECRET_KEY
+        generateValue: true
+      - key: AUTH_REQUIRED
+        value: "false"
