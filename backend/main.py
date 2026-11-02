@@ -1245,8 +1245,14 @@ def update_project(
         raise HTTPException(status_code=404, detail="Project not found")
 
     update_data = payload.model_dump(exclude_unset=True)
+    if "name" in update_data and update_data["name"]:
+        proj.name = update_data["name"].strip()
+        base_slug = slugify(proj.name)
+        proj.slug = _unique_project_slug(db, base_slug, exclude_id=proj.id)
+
     for field, val in update_data.items():
-        setattr(proj, field, val)
+        if field != "name":
+            setattr(proj, field, val)
 
     db.commit()
     db.refresh(proj)
@@ -1260,6 +1266,14 @@ def delete_project(project_id: int, db: Session = Depends(get_db)):
     proj = db.query(Project).filter(Project.id == project_id).first()
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    # Safely detach notes so notes are preserved
+    db.query(Note).filter(Note.project_id == project_id).update({Note.project_id: None})
+
+    # Clear task dependencies and delete tasks
+    db.query(Task).filter(Task.project_id == project_id).update({Task.depends_on_id: None})
+    db.query(Task).filter(Task.project_id == project_id).delete(synchronize_session=False)
+
     db.delete(proj)
     db.commit()
     ws_manager.emit_from_sync("project.deleted", {"id": project_id})

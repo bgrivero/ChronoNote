@@ -2246,16 +2246,58 @@ async function createNewProject(pinImmediately = null) {
 }
 
 async function updateProjectFields(proj, patch) {
+  if (!proj) return;
   Object.assign(proj, patch);
   persistLocalProjectsAndTasks();
   try {
-    await fetch(`${API_BASE}/projects/${proj.id}`, {
+    const res = await fetch(`${API_BASE}/projects/${proj.id}`, {
       method: "PATCH",
       headers: getAuthHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(patch),
     });
-  } catch {
-    // Optimistic local state retained
+    if (res.ok) {
+      const updated = await res.json();
+      Object.assign(proj, updated);
+      persistLocalProjectsAndTasks();
+    }
+  } catch (err) {
+    console.error("Failed to update project fields:", err);
+  }
+}
+
+async function onProjectNameChange(proj, newName) {
+  if (!proj) return;
+  const trimmed = (newName || "").trim();
+  if (!trimmed || trimmed === proj.name) return;
+  await updateProjectFields(proj, { name: trimmed });
+}
+
+async function deleteProject(projectId) {
+  if (!projectId) return;
+  const proj = projects.value.find((p) => p.id === projectId);
+  const name = proj ? proj.name : "this project";
+  if (
+    !window.confirm(
+      `Delete project "${name}" and all of its subtasks? This cannot be undone.`
+    )
+  ) {
+    return;
+  }
+  projects.value = projects.value.filter((p) => p.id !== projectId);
+  if (projectTasksMap.value && projectTasksMap.value[projectId]) {
+    delete projectTasksMap.value[projectId];
+  }
+  persistLocalProjectsAndTasks();
+  if (selectedProjectId.value === projectId) {
+    closeProjectDrawer();
+  }
+  try {
+    await fetch(`${API_BASE}/projects/${projectId}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
+  } catch (err) {
+    console.error("Failed to delete project on server:", err);
   }
 }
 
@@ -2923,6 +2965,14 @@ onMounted(async () => {
                   >
                     {{ proj.is_pinned ? "Pinned" : "Pin" }}
                   </button>
+                  <button
+                    type="button"
+                    class="delete-project-icon-btn"
+                    title="Delete project"
+                    @click="deleteProject(proj.id)"
+                  >
+                    🗑️
+                  </button>
                 </div>
               </div>
 
@@ -3514,6 +3564,14 @@ onMounted(async () => {
                   updateProjectFields(proj, { color: $event.target.value })
                 "
               />
+              <button
+                type="button"
+                class="sidebar-del-btn"
+                title="Delete project"
+                @click.stop="deleteProject(proj.id)"
+              >
+                ✕
+              </button>
             </div>
             <div class="picker-dates">
               <span class="mono-dates">
@@ -4840,14 +4898,13 @@ onMounted(async () => {
             >
               Project {{ selectedProjectPrefix }}
             </span>
-            <strong
-              class="inspector-proj-name"
-              :class="{
-                'strikethrough-done': isProjectCompleted(selectedProject),
-              }"
-            >
-              {{ selectedProject.name }}
-            </strong>
+            <input
+              class="inspector-proj-name-input"
+              :value="selectedProject.name"
+              placeholder="Project Name…"
+              title="Click to rename project"
+              @change="onProjectNameChange(selectedProject, $event.target.value)"
+            />
           </div>
           <div class="drawer-header-right-actions">
             <button
@@ -4869,6 +4926,14 @@ onMounted(async () => {
             </button>
             <button
               type="button"
+              class="delete-project-btn"
+              title="Delete this project"
+              @click="deleteProject(selectedProject.id)"
+            >
+              🗑️ Delete
+            </button>
+            <button
+              type="button"
               class="close-drawer-btn"
               aria-label="Close drawer"
               @click="closeProjectDrawer"
@@ -4877,6 +4942,20 @@ onMounted(async () => {
             </button>
           </div>
         </header>
+
+        <div class="slideover-project-desc-row">
+          <textarea
+            class="inspector-proj-desc-input"
+            :value="selectedProject.description || ''"
+            placeholder="Add project description / goals (click away or press Tab to save)…"
+            rows="2"
+            @change="
+              updateProjectFields(selectedProject, {
+                description: $event.target.value,
+              })
+            "
+          ></textarea>
+        </div>
 
         <div class="slideover-project-settings">
           <div class="swatch-row">

@@ -1956,6 +1956,107 @@ body {
   color: var(--text-dark);
 }
 
+.inspector-proj-name-input {
+  font-family: var(--font-serif);
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--text-dark);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 2px 6px;
+  flex: 1;
+  min-width: 160px;
+  max-width: 340px;
+  transition: all 0.15s ease;
+}
+
+.inspector-proj-name-input:hover,
+.inspector-proj-name-input:focus {
+  border-color: var(--border-subtle);
+  background: var(--bg-page);
+  outline: none;
+}
+
+.slideover-project-desc-row {
+  margin-top: 10px;
+  margin-bottom: 2px;
+}
+
+.inspector-proj-desc-input {
+  width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 0.82rem;
+  font-family: inherit;
+  background: var(--bg-page);
+  color: var(--text-body);
+  resize: vertical;
+  min-height: 52px;
+  transition: border-color 0.15s ease;
+  box-sizing: border-box;
+}
+
+.inspector-proj-desc-input:focus {
+  border-color: var(--primary-orange);
+  outline: none;
+}
+
+.delete-project-btn {
+  border: 1px solid rgba(184, 84, 35, 0.3);
+  background: rgba(184, 84, 35, 0.08);
+  color: #c0392b;
+  border-radius: 6px;
+  padding: 4px 9px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.delete-project-btn:hover {
+  background: #c0392b;
+  color: #fff;
+  border-color: #c0392b;
+}
+
+.delete-project-icon-btn {
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-page);
+  border-radius: 999px;
+  padding: 2px 6px;
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: all 0.14s ease;
+  line-height: 1;
+}
+
+.delete-project-icon-btn:hover {
+  border-color: #c0392b;
+  background: rgba(192, 57, 43, 0.1);
+}
+
+.sidebar-del-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 4px;
+  opacity: 0.5;
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+
+.sidebar-del-btn:hover {
+  opacity: 1;
+  color: #c0392b;
+  background: rgba(192, 57, 43, 0.12);
+}
+
 .close-drawer-btn {
   border: 1px solid var(--border-subtle);
   background: var(--bg-elevated);

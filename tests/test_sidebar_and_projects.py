@@ -154,3 +154,52 @@ def test_projects_kanban_and_pinned_only_timeline(client):
     active_col = next(c for c in kb_after["columns"] if c["status"] == "active")
     assert active_col["count"] == 2
     assert [p["id"] for p in active_col["projects"]] == [p_unpinned["id"], p_pinned["id"]]
+
+
+def test_project_update_and_delete(client):
+    # Create project
+    proj = client.post(
+        "/api/projects",
+        json={
+            "name": "Initial Name",
+            "description": "Initial Description",
+            "color": "#6366f1",
+            "start_date": "2026-11-01",
+            "target_date": "2026-11-15",
+        },
+    ).json()
+    proj_id = proj["id"]
+
+    # Add task and note
+    task = client.post(
+        "/api/tasks",
+        json={"project_id": proj_id, "title": "Subtask 1"},
+    ).json()
+    note = client.post(
+        "/api/notes",
+        json={"project_id": proj_id, "title": "Project Note", "content_md": "Hello"},
+    ).json()
+
+    # Update project name and description
+    patch_res = client.patch(
+        f"/api/projects/{proj_id}",
+        json={"name": "Renamed Project", "description": "Updated Goals", "color": "#10b981"},
+    )
+    assert patch_res.status_code == 200
+    updated = patch_res.json()
+    assert updated["name"] == "Renamed Project"
+    assert updated["color"] == "#10b981"
+
+    # Delete project
+    del_res = client.delete(f"/api/projects/{proj_id}")
+    assert del_res.status_code == 204
+
+    # Verify project is gone
+    get_res = client.get(f"/api/projects/{proj_id}/critical-path")
+    assert get_res.status_code == 404
+
+    # Verify note is preserved with detached project_id
+    note_res = client.get(f"/api/notes/{note['id']}")
+    assert note_res.status_code == 200
+    assert note_res.json()["project_id"] is None
+
