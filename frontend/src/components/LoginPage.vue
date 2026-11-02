@@ -25,8 +25,6 @@ const emit = defineEmits([
   "login-google",
   "login-email",
   "register",
-  "login-demo",
-  "login-last-user",
   "clear-last-user",
 ]);
 
@@ -34,31 +32,28 @@ const authMode = ref("signin"); // "signin" | "register"
 const emailInput = ref("");
 const nameInput = ref("");
 const passwordInput = ref("");
+const localError = ref("");
 const googleBtnRef = ref(null);
-const showAltOptions = ref(false);
 
 const effectiveUser = computed(() => {
   if (props.lastUser && props.lastUser.email) {
     return props.lastUser;
   }
-  return {
-    email: "bryce@example.com",
-    name: "Bryce",
-  };
+  return null;
 });
 
 const displayName = computed(() => {
-  return (
-    effectiveUser.value.name ||
-    effectiveUser.value.email
-      .split("@")[0]
-      .replace(/[._-]+/g, " ")
-      .replace(/\b\w/g, (c) => c.toUpperCase()) ||
-    "Bryce"
-  );
+  if (effectiveUser.value) {
+    return (
+      effectiveUser.value.name ||
+      effectiveUser.value.email
+        .split("@")[0]
+        .replace(/[._-]+/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase())
+    );
+  }
+  return "";
 });
-
-const isBryce = computed(() => effectiveUser.value.email === "bryce@example.com");
 
 watch(
   () => props.lastUser,
@@ -71,55 +66,51 @@ watch(
   { immediate: true }
 );
 
-watch(
-  () => props.authError,
-  (err) => {
-    if (err && (err.toLowerCase().includes("password") || err.toLowerCase().includes("incorrect"))) {
-      showAltOptions.value = true;
-      authMode.value = "signin";
-      if (effectiveUser.value.email) {
-        emailInput.value = effectiveUser.value.email;
-      }
-    }
-  }
-);
+function switchMode(mode) {
+  authMode.value = mode;
+  localError.value = "";
+  passwordInput.value = "";
+}
+
+function handleSwitchAccount() {
+  emit("clear-last-user");
+  emailInput.value = "";
+  nameInput.value = "";
+  passwordInput.value = "";
+  localError.value = "";
+}
 
 function submitAuth() {
-  const email = emailInput.value.trim();
+  localError.value = "";
+  const email = emailInput.value.trim().toLowerCase();
   if (!email || !email.includes("@")) {
+    localError.value = "Please enter a valid email address.";
     return;
   }
+
+  const password = passwordInput.value.trim();
+  if (!password) {
+    localError.value = "Password is required.";
+    return;
+  }
+
+  if (authMode.value === "register" && password.length < 6) {
+    localError.value = "Password must be at least 6 characters.";
+    return;
+  }
+
   if (authMode.value === "register") {
     emit("register", {
       email,
       name: nameInput.value.trim() || email.split("@")[0],
-      password: passwordInput.value,
+      password,
     });
   } else {
     emit("login-email", {
       email,
-      password: passwordInput.value,
+      password,
     });
   }
-}
-
-function submitPrimaryContinue() {
-  if (isBryce.value) {
-    emit("login-demo");
-  } else {
-    emit("login-last-user", effectiveUser.value);
-  }
-}
-
-function switchToDefaultBryce() {
-  emit("clear-last-user");
-  emailInput.value = "bryce@example.com";
-  nameInput.value = "Bryce";
-  passwordInput.value = "";
-}
-
-function switchMode(mode) {
-  authMode.value = mode;
 }
 
 onMounted(() => {
@@ -158,92 +149,37 @@ onMounted(() => {
             values="0.33 0.33 0.33 0 0
                     0.33 0.33 0.33 0 0
                     0.33 0.33 0.33 0 0
-                    0    0    0    1 0"
+                    0 0 0 1 0"
           />
           <feComponentTransfer>
-            <feFuncR type="table" tableValues="0.11 0.72 0.98" />
-            <feFuncG type="table" tableValues="0.10 0.33 0.94" />
-            <feFuncB type="table" tableValues="0.09 0.14 0.90" />
+            <feFuncR type="table" tableValues="0.965 0.722" />
+            <feFuncG type="table" tableValues="0.953 0.329" />
+            <feFuncB type="table" tableValues="0.925 0.137" />
           </feComponentTransfer>
         </filter>
-
         <filter id="duotone-verdigris" color-interpolation-filters="sRGB">
           <feColorMatrix
             type="matrix"
             values="0.33 0.33 0.33 0 0
                     0.33 0.33 0.33 0 0
                     0.33 0.33 0.33 0 0
-                    0    0    0    1 0"
+                    0 0 0 1 0"
           />
           <feComponentTransfer>
-            <feFuncR type="table" tableValues="0.08 0.17 0.94" />
-            <feFuncG type="table" tableValues="0.16 0.40 0.97" />
-            <feFuncB type="table" tableValues="0.18 0.43 0.97" />
+            <feFuncR type="table" tableValues="0.965 0.173" />
+            <feFuncG type="table" tableValues="0.953 0.400" />
+            <feFuncB type="table" tableValues="0.925 0.431" />
           </feComponentTransfer>
         </filter>
       </defs>
     </svg>
 
-    <!-- Background Duotone Artworks -->
+    <!-- Warm Architectural / Drafting Editorial Backdrop -->
     <div class="duotone-backdrop" aria-hidden="true">
-      <div class="duotone-art-layer art-architectural">
-        <svg
-          class="duotone-svg duotone-apply-terracotta"
-          viewBox="0 0 600 600"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <rect width="600" height="600" fill="#fcf4ee" />
-          <g opacity="0.9">
-            <path d="M50 600 V240 A250 250 0 0 1 550 240 V600 Z" fill="#2d150b" />
-            <path d="M120 600 V270 A180 180 0 0 1 480 270 V600 Z" fill="#fcf4ee" />
-            <path d="M180 600 V300 A120 120 0 0 1 420 300 V600 Z" fill="#52200e" />
-            <path d="M240 600 V330 A60 60 0 0 1 360 330 V600 Z" fill="#fcf4ee" />
-            <polygon points="0,0 600,600 550,600 0,50" fill="#883311" />
-            <polygon points="100,0 600,500 600,440 160,0" fill="#2d150b" />
-            <line x1="50" y1="50" x2="550" y2="50" stroke="#b85423" stroke-width="2" stroke-dasharray="8 8" />
-            <line x1="50" y1="120" x2="550" y2="120" stroke="#b85423" stroke-width="1.5" />
-            <line x1="50" y1="190" x2="550" y2="190" stroke="#b85423" stroke-width="1" />
-            <circle cx="300" cy="240" r="14" fill="#b85423" />
-            <circle cx="300" cy="240" r="28" stroke="#b85423" stroke-width="2" />
-          </g>
-        </svg>
-      </div>
-
-      <div class="duotone-art-layer art-chronograph">
-        <svg
-          class="duotone-svg duotone-apply-verdigris"
-          viewBox="0 0 640 640"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <rect width="640" height="640" fill="#f2f7f7" />
-          <g opacity="0.85">
-            <circle cx="320" cy="320" r="280" stroke="#0e1f21" stroke-width="3" />
-            <circle cx="320" cy="320" r="240" stroke="#2c666e" stroke-width="1.5" stroke-dasharray="4 6" />
-            <circle cx="320" cy="320" r="200" stroke="#1c3e43" stroke-width="2" />
-            <circle cx="320" cy="320" r="130" fill="#142c30" />
-            <circle cx="320" cy="320" r="110" fill="#f2f7f7" />
-            <circle cx="320" cy="320" r="40" fill="#2c666e" />
-            <line x1="320" y1="40" x2="320" y2="600" stroke="#0e1f21" stroke-width="2" />
-            <line x1="40" y1="320" x2="600" y2="320" stroke="#0e1f21" stroke-width="2" />
-            <line x1="122" y1="122" x2="518" y2="518" stroke="#2c666e" stroke-width="1.5" />
-            <line x1="518" y1="122" x2="122" y2="518" stroke="#2c666e" stroke-width="1.5" />
-            <path d="M80 320 A240 240 0 0 1 560 320" stroke="#2c666e" stroke-width="6" />
-            <path d="M140 320 A180 180 0 0 1 500 320" stroke="#0e1f21" stroke-width="3" stroke-dasharray="12 6" />
-          </g>
-        </svg>
-      </div>
-
-      <div class="duotone-art-layer art-folio">
-        <svg
-          class="duotone-svg duotone-apply-terracotta"
-          viewBox="0 0 500 500"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
+      <div class="duotone-art-layer art-architectural duotone-apply-terracotta">
+        <svg class="duotone-svg" viewBox="0 0 500 500" fill="none" xmlns="http://www.w3.org/2000/svg">
           <rect width="500" height="500" fill="#fbf9f5" />
-          <g opacity="0.6">
+          <g stroke="#b85423" stroke-width="1.2" opacity="0.85">
             <line x1="40" y1="50" x2="460" y2="50" stroke="#b85423" stroke-width="2" />
             <line x1="40" y1="90" x2="460" y2="90" stroke="#b85423" stroke-width="1" stroke-dasharray="6 6" />
             <line x1="40" y1="130" x2="460" y2="130" stroke="#b85423" stroke-width="1" stroke-dasharray="6 6" />
@@ -262,137 +198,121 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Minimal Centered Content Stage -->
+    <!-- Centered Editorial Login Card -->
     <main class="login-main-stage">
       <div class="login-card">
-        <!-- Minimal Centered Brand Header -->
+        <!-- Brand Header -->
         <header class="login-header">
           <div class="brand-monogram">
             <ChronoNoteLogo :size="48" />
           </div>
           <h1 class="login-serif-title">ChronoNote</h1>
+          <p class="login-sub-caption">Personal Journal &amp; Timeline</p>
         </header>
 
-        <!-- Primary 1-Click Enter as Active / Last User -->
-        <button
-          type="button"
-          class="btn-primary-enter"
-          :disabled="isAuthenticating"
-          @click="submitPrimaryContinue"
-        >
-          <span v-if="isAuthenticating" class="spinner-inline" />
-          <span v-else>Continue as {{ displayName }}</span>
-        </button>
-
-        <div v-if="!isBryce" class="switch-user-prompt">
-          <span class="last-user-badge" :title="effectiveUser.email">{{ effectiveUser.email }}</span>
+        <!-- Returning User Welcome -->
+        <div v-if="effectiveUser && authMode === 'signin'" class="returning-user-card">
+          <div class="returning-user-meta">
+            <span class="returning-greeting">Welcome back,</span>
+            <span class="returning-name">{{ displayName }}</span>
+            <span class="returning-email">{{ effectiveUser.email }}</span>
+          </div>
           <button
             type="button"
             class="btn-switch-account"
-            @click="switchToDefaultBryce"
+            @click="handleSwitchAccount"
           >
-            Switch to Bryce
+            Switch account
           </button>
         </div>
 
-        <!-- Dedicated Account Drawer (Sign In & Register) -->
-        <div class="alt-login-wrapper">
+        <!-- Auth Mode Tabs (Sign In / Register) -->
+        <div class="auth-tab-row">
           <button
             type="button"
-            class="btn-toggle-alt"
-            @click="showAltOptions = !showAltOptions"
+            class="auth-tab-btn"
+            :class="{ active: authMode === 'signin' }"
+            @click="switchMode('signin')"
           >
-            <span>{{ showAltOptions ? "Hide options" : "Use different account or register" }}</span>
-            <span class="toggle-icon">{{ showAltOptions ? "↑" : "↓" }}</span>
+            Sign In
           </button>
-
-          <div v-show="showAltOptions" class="alt-options-drawer">
-            <!-- Sign In / Register Tabs -->
-            <div class="auth-tab-row">
-              <button
-                type="button"
-                class="auth-tab-btn"
-                :class="{ active: authMode === 'signin' }"
-                @click="switchMode('signin')"
-              >
-                Sign In
-              </button>
-              <button
-                type="button"
-                class="auth-tab-btn"
-                :class="{ active: authMode === 'register' }"
-                @click="switchMode('register')"
-              >
-                Register
-              </button>
-            </div>
-
-            <!-- Google One-Tap / GSI button if configured -->
-            <div
-              v-show="googleClientId"
-              ref="googleBtnRef"
-              class="google-gsi-mount-point"
-            />
-
-            <form class="login-credentials-form" @submit.prevent="submitAuth">
-              <div class="login-form-fields">
-                <label v-if="authMode === 'register'" class="field-item">
-                  <span class="field-caption">Your Name</span>
-                  <input
-                    v-model="nameInput"
-                    type="text"
-                    required
-                    class="login-input"
-                    placeholder="e.g. Alice"
-                    autocomplete="name"
-                  />
-                </label>
-
-                <label class="field-item">
-                  <span class="field-caption">Email Address</span>
-                  <input
-                    v-model="emailInput"
-                    type="email"
-                    required
-                    class="login-input"
-                    placeholder="name@example.com"
-                    autocomplete="email"
-                  />
-                </label>
-
-                <label class="field-item">
-                  <span class="field-caption">Password (optional)</span>
-                  <input
-                    v-model="passwordInput"
-                    type="password"
-                    class="login-input"
-                    placeholder="••••••••"
-                    autocomplete="current-password"
-                  />
-                </label>
-              </div>
-
-              <!-- Error Alert -->
-              <p v-if="authError" class="login-error-alert" role="alert">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="12" cy="12" r="10" />
-                  <line x1="12" y1="8" x2="12" y2="12" />
-                  <line x1="12" y1="16" x2="12.01" y2="16" />
-                </svg>
-                <span>{{ authError }}</span>
-              </p>
-
-              <button
-                type="submit"
-                class="btn-login-submit"
-                :disabled="isAuthenticating"
-              >
-                <span v-if="isAuthenticating" class="spinner-inline" />
-                <span v-else>{{ authMode === "register" ? "Create Account" : "Sign In to Account" }}</span>
-              </button>
-            </form>
-          </div>
+          <button
+            type="button"
+            class="auth-tab-btn"
+            :class="{ active: authMode === 'register' }"
+            @click="switchMode('register')"
+          >
+            Register
+          </button>
         </div>
+
+        <!-- Google One-Tap Mount Point (if client ID configured) -->
+        <div
+          v-show="googleClientId"
+          ref="googleBtnRef"
+          class="google-gsi-mount-point"
+        />
+
+        <!-- Secure Credentials Form -->
+        <form class="login-credentials-form" @submit.prevent="submitAuth">
+          <div class="login-form-fields">
+            <label v-if="authMode === 'register'" class="field-item">
+              <span class="field-caption">Your Name</span>
+              <input
+                v-model="nameInput"
+                type="text"
+                class="login-input"
+                placeholder="e.g. Bryce"
+                autocomplete="name"
+              />
+            </label>
+
+            <label v-if="!effectiveUser || authMode === 'register'" class="field-item">
+              <span class="field-caption">Email Address</span>
+              <input
+                v-model="emailInput"
+                type="email"
+                required
+                class="login-input"
+                placeholder="name@example.com"
+                autocomplete="email"
+              />
+            </label>
+
+            <label class="field-item">
+              <span class="field-caption">Password</span>
+              <input
+                v-model="passwordInput"
+                type="password"
+                required
+                minlength="6"
+                class="login-input"
+                :placeholder="authMode === 'register' ? 'At least 6 characters' : '••••••••'"
+                autocomplete="current-password"
+                autofocus
+              />
+            </label>
+          </div>
+
+          <!-- Error Alert -->
+          <p v-if="localError || authError" class="login-error-alert" role="alert">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+            <span>{{ localError || authError }}</span>
+          </p>
+
+          <button
+            type="submit"
+            class="btn-primary-enter"
+            :disabled="isAuthenticating"
+          >
+            <span v-if="isAuthenticating" class="spinner-inline" />
+            <span v-else>{{ authMode === "register" ? "Create Account" : "Sign In" }}</span>
+          </button>
+        </form>
       </div>
     </main>
   </div>
@@ -444,35 +364,12 @@ onMounted(() => {
   opacity: 0.22;
 }
 
-.duotone-apply-verdigris {
-  filter: url(#duotone-verdigris);
-  mix-blend-mode: multiply;
-  opacity: 0.25;
-}
-
 .art-architectural {
   top: -80px;
   right: -60px;
   width: 520px;
   height: 520px;
   transform: rotate(-7deg);
-}
-
-.art-chronograph {
-  bottom: -90px;
-  left: -80px;
-  width: 540px;
-  height: 540px;
-  transform: rotate(12deg);
-}
-
-.art-folio {
-  top: 45%;
-  right: 8%;
-  width: 360px;
-  height: 360px;
-  transform: translateY(-50%) rotate(4deg);
-  opacity: 0.65;
 }
 
 .login-main-stage {
@@ -487,7 +384,7 @@ onMounted(() => {
   background: var(--bg-card, #ffffff);
   border: 1px solid var(--border-subtle, #e4ded3);
   border-radius: 20px;
-  padding: 38px 32px 32px;
+  padding: 34px 28px 28px;
   box-shadow:
     0 1px 3px rgba(28, 25, 23, 0.04),
     0 16px 36px -12px rgba(28, 25, 23, 0.12),
@@ -495,7 +392,7 @@ onMounted(() => {
   backdrop-filter: blur(8px);
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 18px;
 }
 
 .login-header {
@@ -504,20 +401,21 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   text-align: center;
-  gap: 12px;
-  padding-bottom: 4px;
+  gap: 6px;
+  padding-bottom: 2px;
 }
 
 .brand-monogram {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  margin-bottom: 2px;
 }
 
 .login-serif-title {
   margin: 0;
   font-family: var(--font-serif, "Instrument Serif", Georgia, serif);
-  font-size: 2.35rem;
+  font-size: 2.2rem;
   font-weight: 400;
   line-height: 1;
   color: var(--text-dark, #1c1917);
@@ -525,50 +423,45 @@ onMounted(() => {
   text-align: center;
 }
 
-.btn-primary-enter {
-  width: 100%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 12px 20px;
-  background: var(--primary-orange, #b85423);
-  color: #ffffff;
-  border: none;
-  border-radius: 10px;
-  font-size: 0.92rem;
-  font-weight: 600;
-  cursor: pointer;
-  box-shadow: 0 1px 2px rgba(184, 84, 35, 0.2);
-  transition: all 0.15s ease;
+.login-sub-caption {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-muted, #78716c);
 }
 
-.btn-primary-enter:hover:not(:disabled) {
-  background: var(--primary-orange-bright, #9e4418);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(184, 84, 35, 0.25);
-}
-
-.btn-primary-enter:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-}
-
-.switch-user-prompt {
+.returning-user-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  width: 100%;
-  margin-top: -6px;
-  padding: 0 4px;
-  font-size: 0.78rem;
+  background: var(--bg-elevated, #fbf9f5);
+  border: 1px solid var(--border-subtle, #e4ded3);
+  border-radius: 10px;
+  padding: 10px 12px;
+  gap: 8px;
 }
 
-.last-user-badge {
+.returning-user-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.returning-greeting {
+  font-size: 0.72rem;
   color: var(--text-muted, #78716c);
+}
+
+.returning-name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-dark, #1c1917);
+}
+
+.returning-email {
+  font-size: 0.72rem;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.75rem;
-  max-width: 190px;
+  color: var(--text-muted, #78716c);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -578,56 +471,17 @@ onMounted(() => {
   background: none;
   border: none;
   color: var(--primary-orange, #b85423);
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   font-weight: 600;
   cursor: pointer;
-  padding: 2px 4px;
+  padding: 4px;
   text-decoration: underline;
   text-underline-offset: 2px;
+  white-space: nowrap;
 }
 
 .btn-switch-account:hover {
   color: var(--primary-orange-bright, #9e4418);
-}
-
-.alt-login-wrapper {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  padding-top: 4px;
-}
-
-.btn-toggle-alt {
-  background: none;
-  border: none;
-  padding: 4px 8px;
-  color: var(--text-muted, #78716c);
-  font-size: 0.8rem;
-  font-weight: 500;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  transition: color 0.15s ease;
-}
-
-.btn-toggle-alt:hover {
-  color: var(--text-dark, #1c1917);
-}
-
-.toggle-icon {
-  font-size: 0.72rem;
-  opacity: 0.75;
-}
-
-.alt-options-drawer {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding-top: 10px;
-  border-top: 1px dashed var(--border-subtle, #e4ded3);
 }
 
 .auth-tab-row {
@@ -668,13 +522,13 @@ onMounted(() => {
 .login-credentials-form {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
 .login-form-fields {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .field-item {
@@ -691,7 +545,7 @@ onMounted(() => {
 
 .login-input {
   width: 100%;
-  padding: 9px 12px;
+  padding: 10px 12px;
   font-size: 0.88rem;
   font-family: var(--font-sans);
   background: #ffffff;
@@ -720,29 +574,31 @@ onMounted(() => {
   gap: 6px;
 }
 
-.btn-login-submit {
+.btn-primary-enter {
   width: 100%;
-  padding: 10px 16px;
-  background: var(--text-dark, #1c1917);
-  color: #ffffff;
-  border: 1px solid var(--text-dark, #1c1917);
-  border-radius: 8px;
-  font-size: 0.88rem;
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
+  padding: 12px 20px;
+  background: var(--primary-orange, #b85423);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(184, 84, 35, 0.2);
   transition: all 0.15s ease;
 }
 
-.btn-login-submit:hover:not(:disabled) {
-  background: #292524;
-  border-color: #292524;
+.btn-primary-enter:hover:not(:disabled) {
+  background: var(--primary-orange-bright, #9e4418);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(184, 84, 35, 0.25);
 }
 
-.btn-login-submit:disabled {
+.btn-primary-enter:disabled {
   opacity: 0.65;
   cursor: not-allowed;
 }
@@ -764,11 +620,9 @@ onMounted(() => {
 
 @media (max-width: 640px) {
   .login-card {
-    padding: 28px 22px 24px;
+    padding: 26px 20px 22px;
   }
-  .art-architectural,
-  .art-chronograph,
-  .art-folio {
+  .art-architectural {
     display: none;
   }
 }

@@ -807,6 +807,11 @@ def register_account(
     email = (payload.email or "").strip().lower()
     if not email or "@" not in email:
         raise HTTPException(status_code=400, detail="A valid email address is required")
+    if not payload.password or len(payload.password.strip()) < 6:
+        raise HTTPException(
+            status_code=400,
+            detail="Password is required and must be at least 6 characters",
+        )
     if not is_email_allowed(email):
         raise HTTPException(
             status_code=403,
@@ -821,10 +826,7 @@ def register_account(
         )
 
     name = (payload.name or email.split("@")[0]).strip()
-    pwd_hash: str | None = None
-    salt_val: str | None = None
-    if payload.password and payload.password.strip():
-        pwd_hash, salt_val = hash_password(payload.password.strip())
+    pwd_hash, salt_val = hash_password(payload.password.strip())
 
     user = User(
         email=email,
@@ -856,6 +858,8 @@ def login_account(
     email = (payload.email or "").strip().lower()
     if not email or "@" not in email:
         raise HTTPException(status_code=400, detail="A valid email address is required")
+    if not payload.password or not payload.password.strip():
+        raise HTTPException(status_code=400, detail="Password is required")
 
     user = db.query(User).filter(User.email == email).first()
     if not user:
@@ -864,41 +868,14 @@ def login_account(
             detail="No account found with this email. Please register first.",
         )
 
-    if user.password_hash and user.salt:
-        if not payload.password or not verify_password(payload.password, user.password_hash, user.salt):
-            raise HTTPException(status_code=401, detail="Incorrect password. Please try again.")
-
-    user.last_login_at = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(user)
-
-    _ensure_user_workspace_initialized(db, user)
-
-    token, expires_at = create_session_token(user.id, user.email, user.name)
-    return AuthSessionOut(
-        token=token,
-        user=UserOut.model_validate(user),
-        expires_at=expires_at,
-    )
-
-
-@app.post("/api/auth/demo", response_model=AuthSessionOut)
-def demo_login(
-    db: Session = Depends(get_db),
-):
-    """1-click instant access as Bryce (creates demo account and initializes workspace if needed)."""
-    email = "bryce@example.com"
-    user = db.query(User).filter(User.email == email).first()
-    if not user:
-        user = User(
-            email=email,
-            name="Bryce",
-            picture="",
-            google_sub=f"demo-{email}",
+    if not user.password_hash or not user.salt:
+        raise HTTPException(
+            status_code=401,
+            detail="This account does not have a local password set. Please sign in via Google.",
         )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
+
+    if not verify_password(payload.password.strip(), user.password_hash, user.salt):
+        raise HTTPException(status_code=401, detail="Incorrect email or password. Please try again.")
 
     user.last_login_at = datetime.now(timezone.utc)
     db.commit()

@@ -254,7 +254,7 @@ const geminiApiKeyInput = ref("");
 
 // Google Authentication state
 const currentUser = ref(null);
-const lastUser = ref({ email: "bryce@example.com", name: "Bryce" });
+const lastUser = ref(null);
 const authToken = ref("");
 const googleClientId = ref(ENV_GOOGLE_CLIENT_ID);
 const authRequired = ref(false);
@@ -1800,6 +1800,15 @@ async function handleRegister(credentials) {
   const name = (credentials?.name || email.split("@")[0]).trim();
   const password = credentials?.password || "";
 
+  if (!email || !email.includes("@")) {
+    authError.value = "Please enter a valid email address.";
+    return;
+  }
+  if (!password || password.trim().length < 6) {
+    authError.value = "Password is required and must be at least 6 characters.";
+    return;
+  }
+
   isAuthenticating.value = true;
   authError.value = "";
   try {
@@ -1820,34 +1829,12 @@ async function handleRegister(credentials) {
       await openDailyJournalForDate(selectedJournalDate.value, false);
       return;
     }
-    if (res.status === 405 || res.status === 502 || res.status === 503) {
-      // Backend route unavailable or unconfigured on static host - proceed offline
-      console.warn("Backend unavailable (status " + res.status + "), proceeding with offline registration");
-    } else {
-      const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.detail || "Registration failed");
-    }
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Registration failed");
   } catch (err) {
-    if (err.message && err.message !== "Failed to fetch") {
-      authError.value = err.message;
-      isAuthenticating.value = false;
-      return;
-    }
+    authError.value = err.message || "Registration failed";
+    isAuthenticating.value = false;
   }
-
-  // Offline / fallback registration
-  clearWorkspaceData();
-  saveAuthSession(`local-token-${Date.now()}`, {
-    id: Date.now(),
-    email,
-    name,
-    picture: "",
-  });
-  loadLocalJournals();
-  loadLocalProjectsAndTasks();
-  persistLocalProjectsAndTasks();
-  isAuthenticating.value = false;
-  showAuthModal.value = false;
 }
 
 async function handlePersonalGoogleSignIn(credentials) {
@@ -1861,117 +1848,8 @@ async function handlePersonalGoogleSignIn(credentials) {
     authError.value = "Please enter a valid email address.";
     return;
   }
-  const name =
-    authNameInput.value.trim() ||
-    email
-      .split("@")[0]
-      .replace(/[._-]+/g, " ")
-      .replace(/\b\w/g, (c) => c.toUpperCase());
-
-  isAuthenticating.value = true;
-  authError.value = "";
-  try {
-    // Attempt dedicated login first, then fallback to /auth/google
-    let res = await fetch(`${API_BASE}/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    if (!res.ok && res.status !== 401 && res.status !== 404 && res.status !== 405) {
-      res = await fetch(`${API_BASE}/auth/google`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, name }),
-      });
-    }
-    if (res.ok) {
-      const session = await res.json();
-      clearWorkspaceData();
-      saveAuthSession(session.token, session.user);
-      loadLocalJournals();
-      loadLocalProjectsAndTasks();
-      showAuthModal.value = false;
-      isAuthenticating.value = false;
-      await fetchProjectsAndTimeline();
-      await openDailyJournalForDate(selectedJournalDate.value, isJournalDrawerOpen.value);
-      return;
-    }
-    if (res.status === 405 || res.status === 502 || res.status === 503) {
-      // Backend route not reachable or returned 405 Method Not Allowed - proceed offline
-      console.warn("Backend unavailable (status " + res.status + "), proceeding with offline session");
-    } else {
-      const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.detail || "Sign-in rejected");
-    }
-  } catch (err) {
-    if (err.message && err.message !== "Failed to fetch") {
-      authError.value = err.message;
-      isAuthenticating.value = false;
-      return;
-    }
-  }
-
-  // Offline / local fallback session
-  clearWorkspaceData();
-  saveAuthSession(`local-token-${Date.now()}`, {
-    id: Date.now(),
-    email,
-    name,
-    picture: "",
-  });
-  loadLocalJournals();
-  loadLocalProjectsAndTasks();
-  isAuthenticating.value = false;
-  showAuthModal.value = false;
-  await fetchProjectsAndTimeline();
-}
-
-async function handleDemoSignIn() {
-  isAuthenticating.value = true;
-  authError.value = "";
-  try {
-    const res = await fetch(`${API_BASE}/auth/demo`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-    });
-    if (res.ok) {
-      const session = await res.json();
-      clearWorkspaceData();
-      saveAuthSession(session.token, session.user);
-      loadLocalJournals();
-      loadLocalProjectsAndTasks();
-      showAuthModal.value = false;
-      isAuthenticating.value = false;
-      await fetchProjectsAndTimeline();
-      await openDailyJournalForDate(selectedJournalDate.value, isJournalDrawerOpen.value);
-      return;
-    }
-  } catch (err) {
-    console.warn("Backend demo login unreachable, continuing in offline session:", err);
-  }
-
-  // Guaranteed instant access for Bryce (never blocks the user)
-  clearWorkspaceData();
-  saveAuthSession(`local-token-${Date.now()}`, {
-    id: 1,
-    email: "bryce@example.com",
-    name: "Bryce",
-    picture: "",
-  });
-  loadLocalJournals();
-  loadLocalProjectsAndTasks();
-  isAuthenticating.value = false;
-  showAuthModal.value = false;
-  await fetchProjectsAndTimeline();
-  await openDailyJournalForDate(selectedJournalDate.value, isJournalDrawerOpen.value);
-}
-
-async function handleContinueLastUser(targetUser) {
-  const email = (targetUser?.email || "bryce@example.com").trim().toLowerCase();
-  const name = targetUser?.name || "Bryce";
-
-  if (email === "bryce@example.com") {
-    await handleDemoSignIn();
+  if (!password || !password.trim()) {
+    authError.value = "Password is required.";
     return;
   }
 
@@ -1981,9 +1859,8 @@ async function handleContinueLastUser(targetUser) {
     const res = await fetch(`${API_BASE}/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password: "" }),
+      body: JSON.stringify({ email, password }),
     });
-
     if (res.ok) {
       const session = await res.json();
       clearWorkspaceData();
@@ -1996,49 +1873,16 @@ async function handleContinueLastUser(targetUser) {
       await openDailyJournalForDate(selectedJournalDate.value, isJournalDrawerOpen.value);
       return;
     }
-
-    if (res.status === 401) {
-      // Account has password configured - prompt in sign-in drawer
-      authError.value = `Please enter password for ${email}`;
-      isAuthenticating.value = false;
-      return;
-    }
-
-    if (res.status === 405 || res.status === 502 || res.status === 503) {
-      console.warn("Backend unavailable, resuming offline session for " + email);
-    } else {
-      const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.detail || "Sign-in required");
-    }
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Incorrect email or password. Please try again.");
   } catch (err) {
-    if (err.message && err.message !== "Failed to fetch") {
-      authError.value = err.message;
-      isAuthenticating.value = false;
-      return;
-    }
+    authError.value = err.message || "Sign-in rejected";
+    isAuthenticating.value = false;
   }
-
-  // Fallback offline session for the user
-  clearWorkspaceData();
-  saveAuthSession(`local-token-${Date.now()}`, {
-    id: targetUser?.id || Date.now(),
-    email,
-    name,
-    picture: targetUser?.picture || "",
-  });
-  loadLocalJournals();
-  loadLocalProjectsAndTasks();
-  isAuthenticating.value = false;
-  showAuthModal.value = false;
-  await fetchProjectsAndTimeline();
-  await openDailyJournalForDate(selectedJournalDate.value, isJournalDrawerOpen.value);
 }
 
 function handleClearLastUser() {
-  lastUser.value = {
-    email: "bryce@example.com",
-    name: "Bryce",
-  };
+  lastUser.value = null;
   try {
     localStorage.removeItem("chrononote_last_user");
   } catch {
@@ -2712,8 +2556,6 @@ onMounted(async () => {
     @login-google="handleGoogleCredentialResponse"
     @login-email="handlePersonalGoogleSignIn"
     @register="handleRegister"
-    @login-demo="handleDemoSignIn"
-    @login-last-user="handleContinueLastUser"
     @clear-last-user="handleClearLastUser"
   />
   <div v-else class="editorial-app">

@@ -174,12 +174,3 @@ def test_journal_templates_and_rendering(client):
     del_res = client.delete(f"/api/templates/{created_id}")
     assert del_res.status_code == 200
 
-
-def test_auth_demo_endpoint(client):
-    res = client.post("/api/auth/demo")
-    assert res.status_code == 200
-    data = res.json()
-    assert "token" in data
-    assert data["user"]["email"] == "bryce@example.com"
-    assert data["user"]["name"] == "Bryce"
-

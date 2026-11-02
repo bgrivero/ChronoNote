@@ -283,13 +283,13 @@ class GoogleAuthRequest(BaseModel):
 
 class AuthRegisterRequest(BaseModel):
     email: str
+    password: str
     name: str | None = None
-    password: str | None = None
 
 
 class AuthLoginRequest(BaseModel):
     email: str
-    password: str | None = None
+    password: str
 
 
 class UserOut(BaseModel):

@@ -346,7 +346,7 @@ def test_registration_login_and_account_data_isolation(client):
     # Duplicate registration should fail
     dup_res = client.post(
         "/api/auth/register",
-        json={"email": "charlie@example.com", "name": "Charlie"},
+        json={"email": "charlie@example.com", "name": "Charlie", "password": "charlie-pass-123"},
     )
     assert dup_res.status_code == 400
     assert "already exists" in dup_res.json()["detail"]
