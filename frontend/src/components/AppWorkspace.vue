@@ -254,6 +254,7 @@ const geminiApiKeyInput = ref("");
 
 // Google Authentication state
 const currentUser = ref(null);
+const lastUser = ref({ email: "bryce@example.com", name: "Bryce" });
 const authToken = ref("");
 const googleClientId = ref(ENV_GOOGLE_CLIENT_ID);
 const authRequired = ref(false);
@@ -1693,6 +1694,12 @@ function loadSavedAuthSession() {
   try {
     const savedToken = localStorage.getItem("chrononote_session_token");
     const savedUser = localStorage.getItem("chrononote_session_user");
+    const savedLast = localStorage.getItem("chrononote_last_user");
+    if (savedLast) {
+      lastUser.value = JSON.parse(savedLast);
+    } else if (savedUser) {
+      lastUser.value = JSON.parse(savedUser);
+    }
     if (savedToken && savedUser) {
       authToken.value = savedToken;
       currentUser.value = JSON.parse(savedUser);
@@ -1705,9 +1712,20 @@ function loadSavedAuthSession() {
 function saveAuthSession(token, user) {
   authToken.value = token;
   currentUser.value = user;
+  if (user) {
+    lastUser.value = {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      picture: user.picture || "",
+    };
+  }
   try {
     localStorage.setItem("chrononote_session_token", token);
     localStorage.setItem("chrononote_session_user", JSON.stringify(user));
+    if (user) {
+      localStorage.setItem("chrononote_last_user", JSON.stringify(lastUser.value));
+    }
   } catch {
     // ignore
   }
@@ -1946,6 +1964,86 @@ async function handleDemoSignIn() {
   showAuthModal.value = false;
   await fetchProjectsAndTimeline();
   await openDailyJournalForDate(selectedJournalDate.value, isJournalDrawerOpen.value);
+}
+
+async function handleContinueLastUser(targetUser) {
+  const email = (targetUser?.email || "bryce@example.com").trim().toLowerCase();
+  const name = targetUser?.name || "Bryce";
+
+  if (email === "bryce@example.com") {
+    await handleDemoSignIn();
+    return;
+  }
+
+  isAuthenticating.value = true;
+  authError.value = "";
+  try {
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password: "" }),
+    });
+
+    if (res.ok) {
+      const session = await res.json();
+      clearWorkspaceData();
+      saveAuthSession(session.token, session.user);
+      loadLocalJournals();
+      loadLocalProjectsAndTasks();
+      showAuthModal.value = false;
+      isAuthenticating.value = false;
+      await fetchProjectsAndTimeline();
+      await openDailyJournalForDate(selectedJournalDate.value, isJournalDrawerOpen.value);
+      return;
+    }
+
+    if (res.status === 401) {
+      // Account has password configured - prompt in sign-in drawer
+      authError.value = `Please enter password for ${email}`;
+      isAuthenticating.value = false;
+      return;
+    }
+
+    if (res.status === 405 || res.status === 502 || res.status === 503) {
+      console.warn("Backend unavailable, resuming offline session for " + email);
+    } else {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || "Sign-in required");
+    }
+  } catch (err) {
+    if (err.message && err.message !== "Failed to fetch") {
+      authError.value = err.message;
+      isAuthenticating.value = false;
+      return;
+    }
+  }
+
+  // Fallback offline session for the user
+  clearWorkspaceData();
+  saveAuthSession(`local-token-${Date.now()}`, {
+    id: targetUser?.id || Date.now(),
+    email,
+    name,
+    picture: targetUser?.picture || "",
+  });
+  loadLocalJournals();
+  loadLocalProjectsAndTasks();
+  isAuthenticating.value = false;
+  showAuthModal.value = false;
+  await fetchProjectsAndTimeline();
+  await openDailyJournalForDate(selectedJournalDate.value, isJournalDrawerOpen.value);
+}
+
+function handleClearLastUser() {
+  lastUser.value = {
+    email: "bryce@example.com",
+    name: "Bryce",
+  };
+  try {
+    localStorage.removeItem("chrononote_last_user");
+  } catch {
+    // ignore
+  }
 }
 
 function mountGoogleIdentityButton() {
@@ -2610,10 +2708,13 @@ onMounted(async () => {
     :google-client-id="googleClientId"
     :auth-error="authError"
     :is-authenticating="isAuthenticating"
+    :last-user="lastUser"
     @login-google="handleGoogleCredentialResponse"
     @login-email="handlePersonalGoogleSignIn"
     @register="handleRegister"
     @login-demo="handleDemoSignIn"
+    @login-last-user="handleContinueLastUser"
+    @clear-last-user="handleClearLastUser"
   />
   <div v-else class="editorial-app">
     <!-- =====================================================================

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, computed, watch, onMounted } from "vue";
 import ChronoNoteLogo from "./ChronoNoteLogo.vue";
 
 const props = defineProps({
@@ -15,9 +15,20 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  lastUser: {
+    type: Object,
+    default: null,
+  },
 });
 
-const emit = defineEmits(["login-google", "login-email", "register", "login-demo"]);
+const emit = defineEmits([
+  "login-google",
+  "login-email",
+  "register",
+  "login-demo",
+  "login-last-user",
+  "clear-last-user",
+]);
 
 const authMode = ref("signin"); // "signin" | "register"
 const emailInput = ref("");
@@ -25,6 +36,53 @@ const nameInput = ref("");
 const passwordInput = ref("");
 const googleBtnRef = ref(null);
 const showAltOptions = ref(false);
+
+const effectiveUser = computed(() => {
+  if (props.lastUser && props.lastUser.email) {
+    return props.lastUser;
+  }
+  return {
+    email: "bryce@example.com",
+    name: "Bryce",
+  };
+});
+
+const displayName = computed(() => {
+  return (
+    effectiveUser.value.name ||
+    effectiveUser.value.email
+      .split("@")[0]
+      .replace(/[._-]+/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase()) ||
+    "Bryce"
+  );
+});
+
+const isBryce = computed(() => effectiveUser.value.email === "bryce@example.com");
+
+watch(
+  () => props.lastUser,
+  (u) => {
+    if (u?.email) {
+      emailInput.value = u.email;
+      if (u.name) nameInput.value = u.name;
+    }
+  },
+  { immediate: true }
+);
+
+watch(
+  () => props.authError,
+  (err) => {
+    if (err && (err.toLowerCase().includes("password") || err.toLowerCase().includes("incorrect"))) {
+      showAltOptions.value = true;
+      authMode.value = "signin";
+      if (effectiveUser.value.email) {
+        emailInput.value = effectiveUser.value.email;
+      }
+    }
+  }
+);
 
 function submitAuth() {
   const email = emailInput.value.trim();
@@ -45,8 +103,19 @@ function submitAuth() {
   }
 }
 
-function submitDemoLogin() {
-  emit("login-demo");
+function submitPrimaryContinue() {
+  if (isBryce.value) {
+    emit("login-demo");
+  } else {
+    emit("login-last-user", effectiveUser.value);
+  }
+}
+
+function switchToDefaultBryce() {
+  emit("clear-last-user");
+  emailInput.value = "bryce@example.com";
+  nameInput.value = "Bryce";
+  passwordInput.value = "";
 }
 
 function switchMode(mode) {
@@ -204,16 +273,27 @@ onMounted(() => {
           <h1 class="login-serif-title">ChronoNote</h1>
         </header>
 
-        <!-- Primary 1-Click Enter as Default Bryce -->
+        <!-- Primary 1-Click Enter as Active / Last User -->
         <button
           type="button"
           class="btn-primary-enter"
           :disabled="isAuthenticating"
-          @click="submitDemoLogin"
+          @click="submitPrimaryContinue"
         >
           <span v-if="isAuthenticating" class="spinner-inline" />
-          <span v-else>Continue as Bryce</span>
+          <span v-else>Continue as {{ displayName }}</span>
         </button>
+
+        <div v-if="!isBryce" class="switch-user-prompt">
+          <span class="last-user-badge" :title="effectiveUser.email">{{ effectiveUser.email }}</span>
+          <button
+            type="button"
+            class="btn-switch-account"
+            @click="switchToDefaultBryce"
+          >
+            Switch to Bryce
+          </button>
+        </div>
 
         <!-- Dedicated Account Drawer (Sign In & Register) -->
         <div class="alt-login-wrapper">
@@ -472,6 +552,42 @@ onMounted(() => {
 .btn-primary-enter:disabled {
   opacity: 0.65;
   cursor: not-allowed;
+}
+
+.switch-user-prompt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: -6px;
+  padding: 0 4px;
+  font-size: 0.78rem;
+}
+
+.last-user-badge {
+  color: var(--text-muted, #78716c);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.btn-switch-account {
+  background: none;
+  border: none;
+  color: var(--primary-orange, #b85423);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 4px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.btn-switch-account:hover {
+  color: var(--primary-orange-bright, #9e4418);
 }
 
 .alt-login-wrapper {
