@@ -14,32 +14,37 @@ Base = declarative_base()
 
 def build_engine(database_url: str | None = None, allow_fallback: bool | None = None) -> tuple[Engine, str]:
     """Create a SQLAlchemy Engine targeting PostgreSQL by default, with optional SQLite fallback."""
-    target_url = database_url or settings.DATABASE_URL
+    target_url = (database_url or settings.DATABASE_URL).strip()
     fallback = settings.AUTO_FALLBACK_SQLITE if allow_fallback is None else allow_fallback
 
-    if target_url.startswith("postgresql"):
-        pg_engine = create_engine(
-            target_url,
-            pool_pre_ping=True,
-            pool_size=10,
-            max_overflow=20,
-            connect_args={"connect_timeout": 2},
-        )
-        if not fallback:
-            return pg_engine, "postgresql"
+    # Normalize legacy postgres:// scheme to postgresql://
+    if target_url.startswith("postgres://"):
+        target_url = target_url.replace("postgres://", "postgresql://", 1)
 
+    if target_url.startswith("postgresql"):
         try:
+            pg_engine = create_engine(
+                target_url,
+                pool_pre_ping=True,
+                pool_size=10,
+                max_overflow=20,
+                connect_args={"connect_timeout": 10},
+            )
+            if not fallback:
+                return pg_engine, "postgresql"
+
             with pg_engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
             return pg_engine, "postgresql"
         except Exception as exc:
+            if not fallback:
+                raise
             logger.warning(
                 "PostgreSQL at %s unreachable or awaiting credentials (%s); using fallback %s",
                 target_url,
                 exc.__class__.__name__,
                 settings.SQLITE_FALLBACK_URL,
             )
-            pg_engine.dispose()
             target_url = settings.SQLITE_FALLBACK_URL
 
     sqlite_engine = create_engine(
