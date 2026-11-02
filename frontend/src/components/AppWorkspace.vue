@@ -1802,28 +1802,34 @@ async function handleRegister(credentials) {
       await openDailyJournalForDate(selectedJournalDate.value, false);
       return;
     }
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || "Registration failed");
+    if (res.status === 405 || res.status === 502 || res.status === 503) {
+      // Backend route unavailable or unconfigured on static host - proceed offline
+      console.warn("Backend unavailable (status " + res.status + "), proceeding with offline registration");
+    } else {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || "Registration failed");
+    }
   } catch (err) {
     if (err.message && err.message !== "Failed to fetch") {
       authError.value = err.message;
       isAuthenticating.value = false;
       return;
     }
-    // Offline / fallback registration
-    clearWorkspaceData();
-    saveAuthSession(`local-token-${Date.now()}`, {
-      id: Date.now(),
-      email,
-      name,
-      picture: "",
-    });
-    loadLocalJournals();
-    loadLocalProjectsAndTasks();
-    persistLocalProjectsAndTasks();
-    isAuthenticating.value = false;
-    showAuthModal.value = false;
   }
+
+  // Offline / fallback registration
+  clearWorkspaceData();
+  saveAuthSession(`local-token-${Date.now()}`, {
+    id: Date.now(),
+    email,
+    name,
+    picture: "",
+  });
+  loadLocalJournals();
+  loadLocalProjectsAndTasks();
+  persistLocalProjectsAndTasks();
+  isAuthenticating.value = false;
+  showAuthModal.value = false;
 }
 
 async function handlePersonalGoogleSignIn(credentials) {
@@ -1853,7 +1859,7 @@ async function handlePersonalGoogleSignIn(credentials) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     });
-    if (!res.ok && res.status !== 401 && res.status !== 404) {
+    if (!res.ok && res.status !== 401 && res.status !== 404 && res.status !== 405) {
       res = await fetch(`${API_BASE}/auth/google`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1872,8 +1878,13 @@ async function handlePersonalGoogleSignIn(credentials) {
       await openDailyJournalForDate(selectedJournalDate.value, isJournalDrawerOpen.value);
       return;
     }
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || "Sign-in rejected");
+    if (res.status === 405 || res.status === 502 || res.status === 503) {
+      // Backend route not reachable or returned 405 Method Not Allowed - proceed offline
+      console.warn("Backend unavailable (status " + res.status + "), proceeding with offline session");
+    } else {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || "Sign-in rejected");
+    }
   } catch (err) {
     if (err.message && err.message !== "Failed to fetch") {
       authError.value = err.message;
@@ -1898,10 +1909,43 @@ async function handlePersonalGoogleSignIn(credentials) {
 }
 
 async function handleDemoSignIn() {
-  await handlePersonalGoogleSignIn({
+  isAuthenticating.value = true;
+  authError.value = "";
+  try {
+    const res = await fetch(`${API_BASE}/auth/demo`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (res.ok) {
+      const session = await res.json();
+      clearWorkspaceData();
+      saveAuthSession(session.token, session.user);
+      loadLocalJournals();
+      loadLocalProjectsAndTasks();
+      showAuthModal.value = false;
+      isAuthenticating.value = false;
+      await fetchProjectsAndTimeline();
+      await openDailyJournalForDate(selectedJournalDate.value, isJournalDrawerOpen.value);
+      return;
+    }
+  } catch (err) {
+    console.warn("Backend demo login unreachable, continuing in offline session:", err);
+  }
+
+  // Guaranteed instant access for Bryce (never blocks the user)
+  clearWorkspaceData();
+  saveAuthSession(`local-token-${Date.now()}`, {
+    id: 1,
     email: "bryce@example.com",
     name: "Bryce",
+    picture: "",
   });
+  loadLocalJournals();
+  loadLocalProjectsAndTasks();
+  isAuthenticating.value = false;
+  showAuthModal.value = false;
+  await fetchProjectsAndTimeline();
+  await openDailyJournalForDate(selectedJournalDate.value, isJournalDrawerOpen.value);
 }
 
 function mountGoogleIdentityButton() {

@@ -882,6 +882,38 @@ def login_account(
     )
 
 
+@app.post("/api/auth/demo", response_model=AuthSessionOut)
+def demo_login(
+    db: Session = Depends(get_db),
+):
+    """1-click instant access as Bryce (creates demo account and initializes workspace if needed)."""
+    email = "bryce@example.com"
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        user = User(
+            email=email,
+            name="Bryce",
+            picture="",
+            google_sub=f"demo-{email}",
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    user.last_login_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(user)
+
+    _ensure_user_workspace_initialized(db, user)
+
+    token, expires_at = create_session_token(user.id, user.email, user.name)
+    return AuthSessionOut(
+        token=token,
+        user=UserOut.model_validate(user),
+        expires_at=expires_at,
+    )
+
+
 @app.get("/api/auth/me", response_model=UserOut)
 def get_current_authenticated_user(
     authorization: str | None = Header(default=None),
