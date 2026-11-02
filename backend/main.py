@@ -1911,6 +1911,11 @@ def update_habit(
 
     if payload.name is not None:
         habit.name = payload.name.strip()
+    if payload.slug is not None and payload.slug.strip():
+        new_slug = slugify(payload.slug.strip())
+        existing = db.query(Habit).filter(Habit.slug == new_slug, Habit.id != habit.id).first()
+        if not existing:
+            habit.slug = new_slug
     if payload.description is not None:
         habit.description = payload.description.strip()
     if payload.icon is not None:

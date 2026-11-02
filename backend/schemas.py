@@ -365,6 +365,7 @@ class HabitCreate(BaseModel):
 
 class HabitUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=140)
+    slug: str | None = None
     description: str | None = None
     icon: str | None = None
     color: str | None = None

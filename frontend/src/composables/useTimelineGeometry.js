@@ -599,8 +599,34 @@ export function buildMonthlyWeekRows(
     // Collect all project spans and task bars that overlap this 7-day week
     const rawItems = [];
 
-    for (let pIdx = 0; pIdx < (pinnedProjects || []).length; pIdx += 1) {
-      const proj = pinnedProjects[pIdx];
+    const candidateProjects = [];
+    const seenProjIds = new Set();
+    for (const proj of pinnedProjects || []) {
+      if (proj && !seenProjIds.has(proj.id)) {
+        seenProjIds.add(proj.id);
+        candidateProjects.push(proj);
+      }
+    }
+    const allProjList = options.allProjects || [];
+    for (const proj of allProjList) {
+      if (proj && !seenProjIds.has(proj.id) && proj.status !== "archived") {
+        const areSubtasksVisible =
+          options.visibleSubtaskProjectIds === undefined ||
+          options.visibleSubtaskProjectIds === null ||
+          (options.visibleSubtaskProjectIds instanceof Set
+            ? options.visibleSubtaskProjectIds.has(proj.id)
+            : Array.isArray(options.visibleSubtaskProjectIds)
+            ? options.visibleSubtaskProjectIds.includes(proj.id)
+            : Boolean(options.visibleSubtaskProjectIds[proj.id]));
+        if (areSubtasksVisible) {
+          seenProjIds.add(proj.id);
+          candidateProjects.push(proj);
+        }
+      }
+    }
+
+    for (let pIdx = 0; pIdx < candidateProjects.length; pIdx += 1) {
+      const proj = candidateProjects[pIdx];
       const projIsDone = isProjectCompleted(proj);
 
       // In 'active' filter mode, finished projects (and their subtasks) are hidden
@@ -612,13 +638,13 @@ export function buildMonthlyWeekRows(
       const projColor = proj.color || "#ea580c";
 
       // 1. Project Span Bar in this week:
-      // - 'all': show all pinned projects (active and done)
-      // - 'active': show only active projects (projIsDone already skipped above)
-      // - 'done': show only completed projects
+      // Show ONLY if the original project is pinned/visible on timeline
+      const isOriginalProjectVisible = Boolean(proj.is_pinned) && proj.status !== "archived";
       const shouldShowProjectBar =
-        taskFilterMode === "all" ||
-        (taskFilterMode === "active" && !projIsDone) ||
-        (taskFilterMode === "done" && projIsDone);
+        isOriginalProjectVisible &&
+        (taskFilterMode === "all" ||
+          (taskFilterMode === "active" && !projIsDone) ||
+          (taskFilterMode === "done" && projIsDone));
 
       if (shouldShowProjectBar) {
         const pGeom = computeTimelineBarGeometry(
@@ -647,7 +673,7 @@ export function buildMonthlyWeekRows(
         }
       }
 
-      // 2. Tasks belonging to this pinned project in this week (if subtasks are optionally visible)
+      // 2. Tasks belonging to this project in this week (if subtasks are optionally visible)
       const areSubtasksVisible =
         options.visibleSubtaskProjectIds === undefined ||
         options.visibleSubtaskProjectIds === null ||
@@ -797,8 +823,34 @@ export function buildFocusedWeekRow(
 
   const rawItems = [];
 
-  for (let pIdx = 0; pIdx < (pinnedProjects || []).length; pIdx += 1) {
-    const proj = pinnedProjects[pIdx];
+  const candidateProjects = [];
+  const seenProjIds = new Set();
+  for (const proj of pinnedProjects || []) {
+    if (proj && !seenProjIds.has(proj.id)) {
+      seenProjIds.add(proj.id);
+      candidateProjects.push(proj);
+    }
+  }
+  const allProjList = options.allProjects || [];
+  for (const proj of allProjList) {
+    if (proj && !seenProjIds.has(proj.id) && proj.status !== "archived") {
+      const areSubtasksVisible =
+        visibleSubtaskProjectIds === undefined ||
+        visibleSubtaskProjectIds === null ||
+        (visibleSubtaskProjectIds instanceof Set
+          ? visibleSubtaskProjectIds.has(proj.id)
+          : Array.isArray(visibleSubtaskProjectIds)
+          ? visibleSubtaskProjectIds.includes(proj.id)
+          : Boolean(visibleSubtaskProjectIds[proj.id]));
+      if (areSubtasksVisible) {
+        seenProjIds.add(proj.id);
+        candidateProjects.push(proj);
+      }
+    }
+  }
+
+  for (let pIdx = 0; pIdx < candidateProjects.length; pIdx += 1) {
+    const proj = candidateProjects[pIdx];
     const projIsDone = isProjectCompleted(proj);
 
     if (taskFilterMode === "active" && projIsDone) {
@@ -808,10 +860,12 @@ export function buildFocusedWeekRow(
     const prefix = String.fromCharCode(65 + (pIdx % 26));
     const projColor = proj.color || "#ea580c";
 
+    const isOriginalProjectVisible = Boolean(proj.is_pinned) && proj.status !== "archived";
     const shouldShowProjectBar =
-      taskFilterMode === "all" ||
-      (taskFilterMode === "active" && !projIsDone) ||
-      (taskFilterMode === "done" && projIsDone);
+      isOriginalProjectVisible &&
+      (taskFilterMode === "all" ||
+        (taskFilterMode === "active" && !projIsDone) ||
+        (taskFilterMode === "done" && projIsDone));
 
     if (shouldShowProjectBar) {
       const pGeom = computeTimelineBarGeometry(

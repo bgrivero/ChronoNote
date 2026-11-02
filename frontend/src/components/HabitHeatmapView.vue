@@ -195,16 +195,26 @@
               <span class="habit-name">{{ habit.name }}</span>
               <span class="habit-slug">@habit({{ habit.slug }})</span>
             </div>
-            <button
-              type="button"
-              class="habit-quick-toggle"
-              :class="{ completed: isHabitCompletedToday(habit.slug) }"
-              :title="isHabitCompletedToday(habit.slug) ? 'Completed today! Click to uncheck' : 'Click to complete for today'"
-              @click="$emit('toggle-habit', habit.id, todayIso)"
-            >
-              <span class="toggle-indicator">{{ isHabitCompletedToday(habit.slug) ? "✓" : "○" }}</span>
-              <span>{{ isHabitCompletedToday(habit.slug) ? "Done Today" : "Log Today" }}</span>
-            </button>
+            <div class="habit-card-actions">
+              <button
+                type="button"
+                class="habit-edit-action-btn"
+                title="Edit habit"
+                @click="openEditHabitModal(habit)"
+              >
+                ✏️ Edit
+              </button>
+              <button
+                type="button"
+                class="habit-quick-toggle"
+                :class="{ completed: isHabitCompletedToday(habit.slug) }"
+                :title="isHabitCompletedToday(habit.slug) ? 'Completed today! Click to uncheck' : 'Click to complete for today'"
+                @click="$emit('toggle-habit', habit.id, todayIso)"
+              >
+                <span class="toggle-indicator">{{ isHabitCompletedToday(habit.slug) ? "✓" : "○" }}</span>
+                <span>{{ isHabitCompletedToday(habit.slug) ? "Done Today" : "Log Today" }}</span>
+              </button>
+            </div>
           </div>
 
           <div class="habit-meta-row">
@@ -328,6 +338,105 @@
         </form>
       </div>
     </div>
+
+    <!-- Edit Habit Modal Dialog -->
+    <div
+      v-if="showEditHabitModal"
+      class="modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      @click.self="showEditHabitModal = false"
+    >
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 class="modal-title">Edit Habit</h3>
+          <button
+            type="button"
+            class="modal-close-btn"
+            @click="showEditHabitModal = false"
+          >
+            ×
+          </button>
+        </div>
+
+        <form class="modal-form" @submit.prevent="submitEditHabit">
+          <div class="form-group">
+            <label class="form-label" for="edit-habit-name">Habit Name *</label>
+            <input
+              id="edit-habit-name"
+              v-model="editHabitForm.name"
+              type="text"
+              class="input-minimal"
+              placeholder="e.g. Morning Walk, Read 20 Pages"
+              required
+            />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="edit-habit-slug">Identifier Slug</label>
+            <input
+              id="edit-habit-slug"
+              v-model="editHabitForm.slug"
+              type="text"
+              class="input-minimal"
+              placeholder="e.g. walk, reading"
+            />
+            <span class="form-hint">Used in markdown journal entries: @habit(slug)</span>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group half">
+              <label class="form-label" for="edit-habit-color">Color Accent</label>
+              <input
+                id="edit-habit-color"
+                v-model="editHabitForm.color"
+                type="color"
+                class="input-color"
+              />
+            </div>
+            <div class="form-group half">
+              <label class="form-label" for="edit-habit-target">Weekly Target</label>
+              <select
+                id="edit-habit-target"
+                v-model.number="editHabitForm.target_days_per_week"
+                class="input-minimal"
+              >
+                <option :value="7">Every day (7d/wk)</option>
+                <option :value="5">Weekdays (5d/wk)</option>
+                <option :value="4">4 days a week</option>
+                <option :value="3">3 days a week</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="modal-actions-between">
+            <button
+              type="button"
+              class="btn-editorial-danger"
+              @click="submitDeleteHabit"
+            >
+              🗑️ Delete Habit
+            </button>
+            <div class="modal-actions-right">
+              <button
+                type="button"
+                class="btn-editorial-ghost"
+                @click="showEditHabitModal = false"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                class="btn-editorial-primary"
+                :disabled="!editHabitForm.name.trim()"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -350,13 +459,15 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(["select-date", "create-habit", "toggle-habit"]);
+const emit = defineEmits(["select-date", "create-habit", "update-habit", "delete-habit", "toggle-habit"]);
 
 const todayIso = new Date().toISOString().slice(0, 10);
 const selectedHabitFilter = ref("all");
 const hoveredDay = ref(null);
 const tooltipPos = ref({ x: 0, y: 0 });
 const showCreateHabitModal = ref(false);
+const showEditHabitModal = ref(false);
+const editingHabitId = ref(null);
 
 const newHabitForm = ref({
   name: "",
@@ -364,6 +475,45 @@ const newHabitForm = ref({
   color: "#2c666e",
   target_days_per_week: 7,
 });
+
+const editHabitForm = ref({
+  name: "",
+  slug: "",
+  color: "#2c666e",
+  target_days_per_week: 7,
+});
+
+function openEditHabitModal(habit) {
+  editingHabitId.value = habit.id;
+  editHabitForm.value = {
+    name: habit.name || "",
+    slug: habit.slug || "",
+    color: habit.color || "#2c666e",
+    target_days_per_week: habit.target_days_per_week || 7,
+  };
+  showEditHabitModal.value = true;
+}
+
+function submitEditHabit() {
+  if (!editingHabitId.value || !editHabitForm.value.name.trim()) return;
+  emit("update-habit", editingHabitId.value, {
+    name: editHabitForm.value.name.trim(),
+    slug: editHabitForm.value.slug?.trim() || undefined,
+    color: editHabitForm.value.color,
+    target_days_per_week: editHabitForm.value.target_days_per_week,
+  });
+  showEditHabitModal.value = false;
+}
+
+function submitDeleteHabit() {
+  if (!editingHabitId.value) return;
+  const name = editHabitForm.value.name || "this habit";
+  if (!window.confirm(`Are you sure you want to delete habit "${name}" and all of its recorded history?`)) {
+    return;
+  }
+  emit("delete-habit", editingHabitId.value);
+  showEditHabitModal.value = false;
+}
 
 const cellSize = 13;
 const cellGap = 3.5;
@@ -826,6 +976,34 @@ function submitCreateHabit() {
   gap: 12px;
 }
 
+.habit-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.habit-edit-action-btn {
+  font-size: 0.74rem;
+  font-weight: 500;
+  padding: 5px 9px;
+  border-radius: 7px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.habit-edit-action-btn:hover {
+  border-color: var(--secondary-cyan);
+  color: var(--secondary-cyan);
+  background: var(--bg-subtle-hover);
+}
+
 .habit-name {
   font-weight: 600;
   font-size: 0.95rem;
@@ -1020,6 +1198,40 @@ function submitCreateHabit() {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 10px;
+}
+
+.modal-actions-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  width: 100%;
+}
+
+.modal-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-editorial-danger {
+  background: rgba(192, 57, 43, 0.08);
+  border: 1px solid rgba(192, 57, 43, 0.25);
+  color: #c0392b;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-editorial-danger:hover {
+  background: #c0392b;
+  color: #ffffff;
+  border-color: #c0392b;
 }
 
 .btn-editorial-ghost {

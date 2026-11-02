@@ -304,8 +304,28 @@ function switchToWeekMode() {
   selectedWeekAnchorIso.value = `${selectedYear.value}-${mStr}-01`;
 }
 
+function loadVisibleSubtaskProjectIds() {
+  try {
+    const raw = localStorage.getItem("chrononote_visible_subtasks");
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return new Set(arr);
+    }
+  } catch {}
+  return new Set([1, 2, 3]);
+}
+
 // Set of project IDs whose subtasks are currently visible on the timeline
-const visibleTimelineSubtaskProjectIds = ref(new Set([1, 2, 3]));
+const visibleTimelineSubtaskProjectIds = ref(loadVisibleSubtaskProjectIds());
+
+function persistVisibleSubtaskProjectIds() {
+  try {
+    localStorage.setItem(
+      "chrononote_visible_subtasks",
+      JSON.stringify(Array.from(visibleTimelineSubtaskProjectIds.value))
+    );
+  } catch {}
+}
 
 function isProjectSubtasksVisible(projectId) {
   return visibleTimelineSubtaskProjectIds.value.has(projectId);
@@ -319,15 +339,18 @@ function toggleProjectSubtasksVisibility(projectId) {
     next.add(projectId);
   }
   visibleTimelineSubtaskProjectIds.value = next;
+  persistVisibleSubtaskProjectIds();
 }
 
 function expandAllTimelineSubtasks() {
   const allIds = projects.value.map((p) => p.id);
   visibleTimelineSubtaskProjectIds.value = new Set(allIds);
+  persistVisibleSubtaskProjectIds();
 }
 
 function collapseAllTimelineSubtasks() {
   visibleTimelineSubtaskProjectIds.value = new Set();
+  persistVisibleSubtaskProjectIds();
 }
 
 // Subtasks per project (each subtask holds its own notes / description)
@@ -428,6 +451,28 @@ const pinnedProjects = computed(() =>
   })
 );
 
+// Projects that have a swimlane in Year View:
+// Either pinned projects OR unpinned projects whose subtasks are explicitly toggled visible
+const timelineSwimlaneProjects = computed(() => {
+  const list = [];
+  const seen = new Set();
+  for (const p of pinnedProjects.value) {
+    seen.add(p.id);
+    list.push(p);
+  }
+  for (const p of projects.value) {
+    if (
+      !seen.has(p.id) &&
+      p.status !== "archived" &&
+      isProjectSubtasksVisible(p.id)
+    ) {
+      seen.add(p.id);
+      list.push(p);
+    }
+  }
+  return list;
+});
+
 // Currently selected project object for the Slide-Over Drawer
 const selectedProject = computed(
   () => projects.value.find((p) => p.id === selectedProjectId.value) || null
@@ -436,10 +481,10 @@ const selectedProject = computed(
 // Letter prefix for the selected project (A, B, C...)
 const selectedProjectPrefix = computed(() => {
   if (!selectedProject.value) return "A";
-  const pinnedIdx = pinnedProjects.value.findIndex(
+  const swimlaneIdx = timelineSwimlaneProjects.value.findIndex(
     (p) => p.id === selectedProject.value.id
   );
-  if (pinnedIdx >= 0) return String.fromCharCode(65 + (pinnedIdx % 26));
+  if (swimlaneIdx >= 0) return String.fromCharCode(65 + (swimlaneIdx % 26));
   const allIdx = projects.value.findIndex(
     (p) => p.id === selectedProject.value.id
   );
@@ -481,6 +526,7 @@ const monthlyWeeksSpec = computed(() =>
       dailyNotesMap: dailyJournalsMap.value,
       todayIso: todayIso.value,
       visibleSubtaskProjectIds: visibleTimelineSubtaskProjectIds.value,
+      allProjects: projects.value,
     }
   )
 );
@@ -496,6 +542,7 @@ const focusedWeekSpec = computed(() =>
       dailyNotesMap: dailyJournalsMap.value,
       todayIso: todayIso.value,
       visibleSubtaskProjectIds: visibleTimelineSubtaskProjectIds.value,
+      allProjects: projects.value,
     }
   )
 );
@@ -1271,6 +1318,41 @@ async function handleCreateHabit(payload) {
     }
   } catch {
     // Local fallback
+  }
+}
+
+/**
+ * Update an existing habit
+ */
+async function handleUpdateHabit(habitId, payload) {
+  try {
+    const res = await fetch(`${API_BASE}/habits/${habitId}`, {
+      method: "PATCH",
+      headers: getAuthHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      await fetchHabitsAndAnalytics();
+    }
+  } catch (err) {
+    console.error("Failed to update habit:", err);
+  }
+}
+
+/**
+ * Delete a habit
+ */
+async function handleDeleteHabit(habitId) {
+  try {
+    const res = await fetch(`${API_BASE}/habits/${habitId}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
+    if (res.ok) {
+      await fetchHabitsAndAnalytics();
+    }
+  } catch (err) {
+    console.error("Failed to delete habit:", err);
   }
 }
 
@@ -3021,13 +3103,28 @@ onMounted(async () => {
                     → {{ targetCol.label }}
                   </button>
                 </div>
-                <button
-                  type="button"
-                  class="note-link-btn"
-                  @click="openProjectDrawer(proj.id, 'subtasks')"
-                >
-                  Tasks ({{ (projectTasksMap[proj.id] || []).length }})
-                </button>
+                <div class="pcard-footer-actions">
+                  <button
+                    type="button"
+                    class="kanban-subtasks-vis-btn"
+                    :class="{ active: isProjectSubtasksVisible(proj.id) }"
+                    :title="
+                      isProjectSubtasksVisible(proj.id)
+                        ? 'Subtasks are visible on timeline · Click to hide'
+                        : 'Click to show subtasks on timeline even if project bar is unpinned'
+                    "
+                    @click="toggleProjectSubtasksVisibility(proj.id)"
+                  >
+                    {{ isProjectSubtasksVisible(proj.id) ? '👁️ Subtasks On' : '👁️‍🗨️ Subtasks' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="note-link-btn"
+                    @click="openProjectDrawer(proj.id, 'subtasks')"
+                  >
+                    Tasks ({{ (projectTasksMap[proj.id] || []).length }})
+                  </button>
+                </div>
               </div>
             </article>
 
@@ -3406,6 +3503,8 @@ onMounted(async () => {
         :active-date="selectedJournalDate"
         @select-date="jumpToJournalFromHeatmap"
         @create-habit="handleCreateHabit"
+        @update-habit="handleUpdateHabit"
+        @delete-habit="handleDeleteHabit"
         @toggle-habit="handleToggleHabit"
       />
     </main>
@@ -3577,13 +3676,29 @@ onMounted(async () => {
               <span class="mono-dates">
                 {{ proj.start_date || "—" }} → {{ proj.target_date || "—" }}
               </span>
-              <button
-                type="button"
-                class="sidebar-subtask-pill"
-                @click.stop="openProjectDrawer(proj.id, 'subtasks')"
-              >
-                {{ (projectTasksMap[proj.id] || []).length }} tasks
-              </button>
+              <div class="picker-subtask-btns" @click.stop>
+                <button
+                  type="button"
+                  class="sidebar-timeline-subtask-toggle"
+                  :class="{ active: isProjectSubtasksVisible(proj.id) }"
+                  :title="
+                    isProjectSubtasksVisible(proj.id)
+                      ? 'Subtasks are visible on timeline · Click to hide'
+                      : 'Show subtasks on timeline even if project bar is unpinned'
+                  "
+                  @click="toggleProjectSubtasksVisibility(proj.id)"
+                >
+                  {{ isProjectSubtasksVisible(proj.id) ? '👁️ Subtasks On' : '👁️‍🗨️ Subtasks' }}
+                </button>
+                <button
+                  type="button"
+                  class="sidebar-subtask-pill"
+                  title="Open subtasks manager drawer"
+                  @click="openProjectDrawer(proj.id, 'subtasks')"
+                >
+                  {{ (projectTasksMap[proj.id] || []).length }} tasks
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -4302,7 +4417,7 @@ onMounted(async () => {
             </div>
 
             <div
-              v-for="(proj, pIdx) in pinnedProjects"
+              v-for="(proj, pIdx) in timelineSwimlaneProjects"
               :key="proj.id"
               class="year-project-swimlane"
             >
@@ -4310,7 +4425,16 @@ onMounted(async () => {
                 class="cal-project-cell clickable-card"
                 @click="openProjectDrawer(proj.id, 'subtasks')"
               >
-                <div class="cal-proj-title">{{ proj.name }}</div>
+                <div class="cal-proj-title">
+                  {{ proj.name }}
+                  <span
+                    v-if="!proj.is_pinned"
+                    class="unpinned-subtasks-badge"
+                    title="Project bar is unpinned; only subtasks are displayed"
+                  >
+                    (Subtasks Only)
+                  </span>
+                </div>
                 <div class="cal-proj-dates">
                   {{ proj.start_date }} → {{ proj.target_date }}
                 </div>
@@ -4329,9 +4453,9 @@ onMounted(async () => {
                   <div v-for="m in 12" :key="m" class="year-bg-col" />
                 </div>
 
-                <!-- Row 1: Project Span Bar (Draggable to reposition date, extendable to adjust start/target) -->
+                <!-- Row 1: Project Span Bar (ONLY rendered if project is actually pinned!) -->
                 <div
-                  v-if="taskFilterMode !== 'done' || isProjectCompleted(proj)"
+                  v-if="proj.is_pinned && (taskFilterMode !== 'done' || isProjectCompleted(proj))"
                   class="week-item-card clickable-card is-project-bar is-draggable-project"
                   :class="{
                     'is-done-card': isProjectCompleted(proj),
@@ -5007,6 +5131,29 @@ onMounted(async () => {
                 "
               />
             </label>
+          </div>
+
+          <div class="drawer-timeline-vis-box">
+            <label
+              class="drawer-vis-checkbox-label"
+              title="Show or hide this project's subtasks on the calendar timeline"
+            >
+              <input
+                type="checkbox"
+                :checked="isProjectSubtasksVisible(selectedProject.id)"
+                @change="toggleProjectSubtasksVisibility(selectedProject.id)"
+              />
+              <span class="vis-label-text">
+                Show Subtasks on Calendar Timeline
+              </span>
+            </label>
+            <span
+              v-if="!selectedProject.is_pinned"
+              class="unpinned-hint-pill"
+              title="Subtasks will show on the timeline while the project span bar remains hidden"
+            >
+              Project bar unpinned
+            </span>
           </div>
         </div>
 
