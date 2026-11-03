@@ -50,6 +50,11 @@ import {
   filterStickersByTarget,
   sanitizeStickerCategory,
 } from "../src/composables/useStickers.js";
+import {
+  parseDocsImageDirectives,
+  formatDocsImageMarkdown,
+  computeDraggableImageStyle,
+} from "../src/composables/useDocsImages.js";
 
 test("Left Sidebar partitions pinned vs regular projects, orders by sidebar_order, and filters archived", () => {
   const sampleProjects = [
@@ -765,6 +770,47 @@ test("Sticker placement filters by date/note and computes CSS transform styling"
   assert.equal(sanitizeStickerCategory("achievement"), "achievement");
   assert.equal(sanitizeStickerCategory("UNKNOWN_CAT"), "custom");
 });
+
+test("Docs-style image parsing, layout directives, and draggable styling", () => {
+  const mdWithImages = `
+# Project Notes
+Here is an inline diagram:
+![Architecture](/api/uploads/images/arch.png)
+
+And here is a draggable floating card:
+![Mind Map](/api/uploads/images/mindmap.png){mode="draggable", x="45", y="120", w="350"}
+
+And a wrap-left diagram:
+![Chart](/api/uploads/images/chart.png){mode="wrap_left", w="240"}
+`;
+
+  const parsed = parseDocsImageDirectives(mdWithImages);
+  assert.equal(parsed.floatingImages.length, 2);
+  const dragImg = parsed.floatingImages[0];
+  assert.equal(dragImg.caption, "Mind Map");
+  assert.equal(dragImg.mode, "draggable");
+  assert.equal(dragImg.x, 45);
+  assert.equal(dragImg.y, 120);
+  assert.equal(dragImg.width, 350);
+
+  const style = computeDraggableImageStyle(dragImg);
+  assert.equal(style.left, "45%");
+  assert.equal(style.top, "120px");
+  assert.equal(style.width, "350px");
+
+  // Format docs image markdown
+  const formattedInline = formatDocsImageMarkdown("Diagram", "/uploads/d.png", "inline");
+  assert.equal(formattedInline, "![Diagram](/uploads/d.png)");
+
+  const formattedDrag = formatDocsImageMarkdown("Flow", "/uploads/f.png", "draggable", 60, 40, 400);
+  assert.equal(formattedDrag, '![Flow](/uploads/f.png){mode="draggable", x="60", y="40", w="400"}');
+
+  // Verify markdown preview renderer outputs docs image wrappers
+  const rendered = renderMarkdownPreviewHtml(mdWithImages);
+  assert.ok(rendered.includes('class="md-img-inline"'));
+  assert.ok(rendered.includes('class="md-img-wrap-left"'));
+});
+
 
 
 

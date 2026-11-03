@@ -3514,6 +3514,39 @@ onMounted(async () => {
                 @change="handleOcrFileChange($event, 'journal')"
               />
             </label>
+
+            <!-- Docs-Style Image Uploaders -->
+            <label class="btn-editorial-ghost" title="Upload image as draggable floating card (Docs style)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <polyline points="21 15 16 10 5 21" />
+              </svg>
+              <span>+ Image (Draggable)</span>
+              <input
+                type="file"
+                accept="image/*"
+                class="sr-only-file"
+                @change="handleUploadJournalImage($event.target.files?.[0], 'draggable')"
+              />
+            </label>
+            <label class="btn-editorial-ghost" title="Upload image in-line with markdown text">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="3" y1="6" x2="21" y2="6" />
+                <rect x="3" y="9" width="10" height="9" rx="1" />
+                <line x1="16" y1="11" x2="21" y2="11" />
+                <line x1="16" y1="15" x2="21" y2="15" />
+                <line x1="3" y1="21" x2="21" y2="21" />
+              </svg>
+              <span>+ Image (Inline)</span>
+              <input
+                type="file"
+                accept="image/*"
+                class="sr-only-file"
+                @change="handleUploadJournalImage($event.target.files?.[0], 'inline')"
+              />
+            </label>
+
             <button
               type="button"
               class="btn-editorial-ghost"
@@ -3718,6 +3751,15 @@ onMounted(async () => {
         </div>
 
         <div class="journal-paper-body">
+          <!-- Draggable / Floating Images Layer (Docs style) -->
+          <DocsImageOverlay
+            v-if="journalFloatingImages.length"
+            :images="journalFloatingImages"
+            @update-image="handleUpdateFloatingImage"
+            @change-mode="handleChangeFloatingImageMode"
+            @delete-image="handleDeleteFloatingImage"
+          />
+
           <!-- 1. Rendered Markdown View (Default) -->
           <div
             v-if="!isEditingJournal"
