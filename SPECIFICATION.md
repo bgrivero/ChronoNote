@@ -23,6 +23,12 @@
 5. **Real-Time WebSocket Collaboration Hub (`WS /ws/workspace`)**:
    - Broadcasts live workspace mutations (`project.created`, `sidebar.reordered`, `task.updated`, `kanban.moved`, `note.synced`) and handles client heartbeats (`ping`/`pong`) and cursor presence.
 
+6. **Phase 3 Customizability, Study Sanctuary & Media Suite**:
+   - **Study Mode & Pomodoro Clock (`GET/POST /api/study/sessions`, `GET /api/study/stats`)**: Project & subtask targeting, configurable intervals (Focus, Short Break, Long Break), Web Audio API harmonic chime bell & soft ambient rain synthesis, auto-journal bullet logging (`- [x] 🍅 Focus...`), and habit streak synchronization.
+   - **Custom Stickers & Calendar/Note Pinning (`GET/POST /api/stickers`, `GET/POST /api/stickers/placements`)**: Curated stamp collection + custom transparent PNG/SVG upload, placement on calendar dates (Month/Week views) and notes with dynamic rotation, scale, and removal.
+   - **Google Docs–Style Journal Images (`POST /api/uploads/images`)**: Three layout modes (Inline paragraph flow, Wrap text left/right, and Above-text free draggable floating card with resize handles and zoom lightbox).
+   - **Visual Themes & Paper Textures**: 5 bespoke paper styles (`Warm Cream`, `Dot Grid`, `Lined Notebook`, `Sepia Parchment`, `Dark Slate`) and typography pairings (`Editorial Serif`, `Cozy Handwritten`, `Clean Monospace`).
+
 ---
 
 ## 2. System Architecture
@@ -65,14 +71,14 @@ flowchart LR
 
 ---
 
-## 4. Running the Operable Test Suites (26 Automated Tests)
+## 4. Running the Operable Test Suites (68 Automated Tests)
 
-### Backend Pytest Suite (19/19 Passing)
+### Backend Pytest Suite (39/39 Passing)
 ```powershell
 python -m pytest
 ```
 
-### Frontend Node Test Suite (7/7 Passing)
+### Frontend Node Test Suite (29/29 Passing)
 ```powershell
 node --test frontend/tests/frontend.test.mjs
 ```
