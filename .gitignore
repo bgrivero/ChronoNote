@@ -8,6 +8,8 @@
 *.sqlite
 *.sqlite3
 chrononote.db
+uploads/
+.chrononote_mcp_session.json
 
 # Python & Testing Caches
 __pycache__/
