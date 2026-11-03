@@ -92,3 +92,42 @@ def test_sticker_placements_on_calendar_and_notes(client):
     client.delete(f"/api/stickers/placements/{cal_placement['id']}")
     client.delete(f"/api/stickers/placements/{note_placement['id']}")
     assert len(client.get("/api/stickers/placements?target_key=2026-11-15").json()) == 0
+
+
+def test_upload_journal_image_and_serving(client):
+    # Base64 test image (1x1 PNG)
+    test_b64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    
+    # 1. Upload inline image
+    res = client.post(
+        "/api/uploads/images",
+        json={
+            "filename": "diagram.png",
+            "image_data": test_b64,
+            "mode": "inline",
+        },
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["mode"] == "inline"
+    assert "/api/uploads/images/" in data["url"]
+
+    # 2. Fetch the stored image file
+    img_res = client.get(data["url"])
+    assert img_res.status_code == 200
+
+    # 3. Upload draggable image
+    res_drag = client.post(
+        "/api/uploads/images",
+        json={
+            "filename": "flowchart.png",
+            "image_data": test_b64,
+            "mode": "draggable",
+        },
+    )
+    assert res_drag.status_code == 200
+    drag_data = res_drag.json()
+    assert drag_data["mode"] == "draggable"
+    assert drag_data["pos_x"] == 50
+    assert drag_data["pos_y"] == 20
+
