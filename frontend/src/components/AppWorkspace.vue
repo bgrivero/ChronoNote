@@ -5,7 +5,9 @@ import ChronoNoteLogo from "./ChronoNoteLogo.vue";
 import HabitHeatmapView from "./HabitHeatmapView.vue";
 import StudyModeView from "./StudyModeView.vue";
 import StickerTrayDrawer from "./StickerTrayDrawer.vue";
-import { filterStickersByTarget } from "../composables/useStickers.js";
+import DocsImageOverlay from "./DocsImageOverlay.vue";
+import { filterStickersByTarget, readFileAsDataUrl } from "../composables/useStickers.js";
+import { parseDocsImageDirectives, formatDocsImageMarkdown } from "../composables/useDocsImages.js";
 import {
   extractHabitPills,
   toggleHabitInMarkdown,
@@ -1699,6 +1701,74 @@ function getStickersForDate(isoDate) {
 
 function getStickersForNote(noteKey) {
   return filterStickersByTarget(stickerPlacements.value, "note", noteKey);
+}
+
+// ---------------------------------------------------------------------------
+// Docs-Style Journal Image Handlers (Inline vs Above Text Draggable)
+// ---------------------------------------------------------------------------
+const journalFloatingImages = computed(() => {
+  return parseDocsImageDirectives(journalDraftMd.value).floatingImages;
+});
+
+async function handleUploadJournalImage(file, mode = "draggable") {
+  if (!file) return;
+  try {
+    const dataUrl = await readFileAsDataUrl(file);
+    const cleanName = file.name.replace(/\.[^/.]+$/, "").slice(0, 40) || "Image";
+
+    const res = await fetch(`${API_BASE}/uploads/images`, {
+      method: "POST",
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({
+        filename: file.name,
+        image_data: dataUrl,
+        mode,
+      }),
+    });
+
+    if (res.ok) {
+      const result = await res.json();
+      const markdownTag = formatDocsImageMarkdown(
+        cleanName,
+        result.url,
+        mode,
+        result.pos_x || 50,
+        result.pos_y || 20,
+        result.width || 320
+      );
+      journalDraftMd.value = (journalDraftMd.value || "").trimEnd() + `\n\n${markdownTag}\n`;
+      showNotification({
+        type: "success",
+        message: `Added image as ${mode === 'draggable' ? 'draggable card' : 'inline flow'}!`,
+      });
+    }
+  } catch (err) {
+    console.error("Failed to upload image:", err);
+  }
+}
+
+function handleUpdateFloatingImage({ id, x, y, width }) {
+  const currentImages = journalFloatingImages.value;
+  const target = currentImages.find((img) => img.id === id);
+  if (!target) return;
+
+  const newTag = formatDocsImageMarkdown(target.caption, target.url, target.mode, x, y, width);
+  journalDraftMd.value = journalDraftMd.value.replace(target.rawDirective, newTag);
+}
+
+function handleChangeFloatingImageMode({ id, mode }) {
+  const currentImages = journalFloatingImages.value;
+  const target = currentImages.find((img) => img.id === id);
+  if (!target) return;
+
+  const newTag = formatDocsImageMarkdown(target.caption, target.url, mode, target.x, target.y, target.width);
+  journalDraftMd.value = journalDraftMd.value.replace(target.rawDirective, newTag);
+}
+
+function handleDeleteFloatingImage(target) {
+  if (!target || !target.rawDirective) return;
+  journalDraftMd.value = journalDraftMd.value.replace(target.rawDirective, "").trim();
+  showNotification({ type: "success", message: "Image removed from journal" });
 }
 
 /**
