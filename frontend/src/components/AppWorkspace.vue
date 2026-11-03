@@ -4232,10 +4232,7 @@ onMounted(async () => {
         >
           <div class="overdue-alert-left">
             <span class="overdue-alert-icon">⚠️</span>
-            <div class="overdue-alert-info">
-              <strong class="overdue-alert-title">{{ totalOverdueTasksCount }} Overdue Tasks</strong>
-              <small class="overdue-alert-sub">Action required</small>
-            </div>
+            <strong class="overdue-alert-title">{{ totalOverdueTasksCount }} Overdue</strong>
           </div>
           <span class="overdue-count-pill">{{ totalOverdueTasksCount }}</span>
         </div>
@@ -4749,7 +4746,7 @@ onMounted(async () => {
                       </strong>
 
                       <span v-if="item.isOverdue" class="overdue-tag-pill">
-                        OVERDUE
+                        Overdue
                       </span>
 
                       <!-- Subtasks toggle button pill right on the project card -->
@@ -5056,11 +5053,11 @@ onMounted(async () => {
                       </strong>
 
                       <span v-if="item.isOverdue" class="overdue-tag-pill">
-                        OVERDUE
+                        Overdue
                       </span>
 
                       <span v-if="item.isOverdue" class="overdue-tag-pill">
-                        OVERDUE
+                        Overdue
                       </span>
 
                       <!-- Subtasks toggle button pill right on the project card -->
