@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from "vue";
 import LoginPage from "./LoginPage.vue";
 import ChronoNoteLogo from "./ChronoNoteLogo.vue";
 import HabitHeatmapView from "./HabitHeatmapView.vue";
+import StudyModeView from "./StudyModeView.vue";
 import {
   extractHabitPills,
   toggleHabitInMarkdown,
@@ -1533,6 +1534,52 @@ function jumpToJournalFromHeatmap(dateIso) {
   openDailyJournalForDate(dateIso, false);
 }
 
+// ---------------------------------------------------------------------------
+// Study Mode State & Handlers
+// ---------------------------------------------------------------------------
+const workspaceNotes = ref([]);
+
+const allTasksList = computed(() => {
+  const result = [];
+  for (const list of Object.values(projectTasksMap.value || {})) {
+    if (Array.isArray(list)) {
+      result.push(...list);
+    }
+  }
+  return result;
+});
+
+async function fetchWorkspaceNotes() {
+  try {
+    const res = await fetch(`${API_BASE}/notes`, {
+      headers: getAuthHeaders(),
+    });
+    if (res.ok) {
+      workspaceNotes.value = await res.json();
+    }
+  } catch {
+    // offline/fallback
+  }
+}
+
+async function handleStudySessionCompleted(session) {
+  if (session && session.auto_log_to_journal) {
+    const today = new Date().toISOString().split("T")[0];
+    await openDailyJournalForDate(today, false);
+  }
+  await fetchHabitsAndAnalytics();
+}
+
+function handleStudyNoteUpdated(updatedNote) {
+  if (!updatedNote) return;
+  const idx = workspaceNotes.value.findIndex((n) => n.id === updatedNote.id);
+  if (idx !== -1) {
+    workspaceNotes.value[idx] = updatedNote;
+  } else {
+    workspaceNotes.value.push(updatedNote);
+  }
+}
+
 /**
  * Helper to determine if a habit slug is marked completed on a specific date
  */
@@ -2746,6 +2793,18 @@ onMounted(async () => {
             🔥 {{ habitAnalytics.overall_stats.best_current_streak }}d
           </span>
         </button>
+        <button
+          type="button"
+          class="page-tab-btn"
+          :class="{ active: activePage === 'study' }"
+          @click="
+            activePage = 'study';
+            fetchWorkspaceNotes();
+          "
+        >
+          Study &amp; Pomodoro
+          <span class="tab-count study-badge-count">🍅 Focus</span>
+        </button>
       </nav>
 
       <div class="topbar-right">
@@ -3506,6 +3565,25 @@ onMounted(async () => {
         @update-habit="handleUpdateHabit"
         @delete-habit="handleDeleteHabit"
         @toggle-habit="handleToggleHabit"
+      />
+    </main>
+
+    <!-- =====================================================================
+         PAGE 4: STUDY SANCTUARY & POMODORO CLOCK
+         ===================================================================== -->
+    <main
+      v-else-if="activePage === 'study'"
+      class="study-page"
+      aria-label="Study & Pomodoro Page"
+    >
+      <StudyModeView
+        :projects="projects"
+        :notes="workspaceNotes"
+        :tasks="allTasksList"
+        :selected-journal-date="selectedJournalDate"
+        @session-completed="handleStudySessionCompleted"
+        @note-updated="handleStudyNoteUpdated"
+        @notify="showNotification"
       />
     </main>
 
@@ -5800,6 +5878,23 @@ onMounted(async () => {
           <path d="M12 20v-6M6 20V10M18 20V4" />
         </svg>
         <span>Habits</span>
+      </button>
+
+      <button
+        type="button"
+        class="mobile-nav-item"
+        :class="{ active: activePage === 'study' }"
+        @click="
+          isJournalDrawerOpen = false;
+          activePage = 'study';
+          fetchWorkspaceNotes();
+        "
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <circle cx="12" cy="12" r="10" />
+          <polyline points="12 6 12 12 16 14" />
+        </svg>
+        <span>Study</span>
       </button>
 
       <button

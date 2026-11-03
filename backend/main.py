@@ -20,6 +20,7 @@ from backend.models import (
     Note,
     NoteLink,
     Project,
+    StudySession,
     Task,
     User,
 )
@@ -63,6 +64,9 @@ from backend.schemas import (
     SearchResultItem,
     SidebarProjectItem,
     SidebarReorderRequest,
+    StudySessionCreate,
+    StudySessionOut,
+    StudyStatsOut,
     TaskCreate,
     TaskOut,
     TaskUpdate,
@@ -2208,6 +2212,247 @@ def delete_journal_template(
     db.delete(tpl)
     db.commit()
     return {"message": "Template deleted successfully", "id": template_id}
+
+
+# ---------------------------------------------------------------------------
+# Study Mode & Pomodoro Endpoints
+# ---------------------------------------------------------------------------
+
+
+def _serialize_study_session(session: StudySession) -> StudySessionOut:
+    return StudySessionOut(
+        id=session.id,
+        user_id=session.user_id,
+        project_id=session.project_id,
+        task_id=session.task_id,
+        note_id=session.note_id,
+        duration_minutes=session.duration_minutes,
+        session_type=session.session_type,
+        intention=session.intention,
+        notes=session.notes,
+        session_date=session.session_date,
+        completed=session.completed,
+        created_at=session.created_at,
+        project_name=session.project.name if session.project else None,
+        project_color=session.project.color if session.project else None,
+        task_title=session.task.title if session.task else None,
+    )
+
+
+@app.post("/api/study/sessions", response_model=StudySessionOut, status_code=201)
+def create_study_session(
+    payload: StudySessionCreate,
+    user: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    s_date = payload.session_date or date.today()
+    project = None
+    if payload.project_id:
+        pq = db.query(Project).filter(Project.id == payload.project_id)
+        if user:
+            pq = pq.filter(Project.user_id == user.id)
+        else:
+            pq = pq.filter(Project.user_id.is_(None))
+        project = pq.first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+    task = None
+    if payload.task_id:
+        tq = db.query(Task).filter(Task.id == payload.task_id)
+        task = tq.first()
+
+    note = None
+    if payload.note_id:
+        nq = db.query(Note).filter(Note.id == payload.note_id)
+        if user:
+            nq = nq.filter(Note.user_id == user.id)
+        else:
+            nq = nq.filter(Note.user_id.is_(None))
+        note = nq.first()
+
+    session = StudySession(
+        user_id=user.id if user else None,
+        project_id=project.id if project else None,
+        task_id=task.id if task else None,
+        note_id=note.id if note else None,
+        duration_minutes=payload.duration_minutes,
+        session_type=payload.session_type,
+        intention=payload.intention.strip(),
+        notes=payload.notes.strip(),
+        session_date=s_date,
+        completed=payload.completed,
+    )
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+
+    # Auto-log to daily journal if requested
+    if payload.auto_log_to_journal and payload.completed and payload.session_type == "focus":
+        dn_q = db.query(Note).filter(Note.is_daily_note == True, Note.note_date == s_date)
+        if user:
+            dn_q = dn_q.filter(Note.user_id == user.id)
+        else:
+            dn_q = dn_q.filter(Note.user_id.is_(None))
+        daily_note = dn_q.first()
+        if not daily_note:
+            d_str = s_date.isoformat()
+            daily_note = Note(
+                user_id=user.id if user else None,
+                title=f"Journal - {d_str}",
+                slug=slugify(f"journal-{d_str}-{user.id if user else 'demo'}"),
+                content_md=f"# Journal — {d_str}\n\n",
+                is_daily_note=True,
+                note_date=s_date,
+            )
+            db.add(daily_note)
+            db.commit()
+            db.refresh(daily_note)
+
+        proj_label = f"[[{project.name}]]" if project else "Study Session"
+        task_label = f" ({task.title})" if task else ""
+        intent_label = f": {payload.intention.strip()}" if payload.intention.strip() else ""
+        bullet = f"- [x] 🍅 Focus ({payload.duration_minutes}m) on {proj_label}{task_label}{intent_label}"
+
+        if bullet not in (daily_note.content_md or ""):
+            new_content = (daily_note.content_md or "").rstrip() + f"\n{bullet}\n"
+            daily_note.content_md = new_content
+            parsed = parse_markdown_note(new_content)
+            daily_note.frontmatter_json = json.dumps(parsed.frontmatter)
+            daily_note.tags_json = json.dumps(parsed.tags)
+            db.commit()
+
+    # Sync habit if slug matches
+    target_slug = payload.sync_habit_slug or "study"
+    hq = db.query(Habit).filter(
+        Habit.archived == False,
+        (Habit.slug == target_slug) | (Habit.slug == "deep-work") | (Habit.slug == "focus"),
+    )
+    if user:
+        hq = hq.filter(Habit.user_id == user.id)
+    else:
+        hq = hq.filter(Habit.user_id.is_(None))
+    matched_habit = hq.first()
+    if matched_habit and payload.completed and payload.session_type == "focus":
+        log_q = db.query(HabitLog).filter(
+            HabitLog.habit_id == matched_habit.id,
+            HabitLog.log_date == s_date,
+        )
+        if user:
+            log_q = log_q.filter(HabitLog.user_id == user.id)
+        else:
+            log_q = log_q.filter(HabitLog.user_id.is_(None))
+        h_log = log_q.first()
+        if not h_log:
+            h_log = HabitLog(
+                habit_id=matched_habit.id,
+                user_id=user.id if user else None,
+                log_date=s_date,
+                completed=True,
+                value=f"{payload.duration_minutes}m",
+            )
+            db.add(h_log)
+            db.commit()
+
+    return _serialize_study_session(session)
+
+
+@app.get("/api/study/sessions", response_model=list[StudySessionOut])
+def list_study_sessions(
+    project_id: int | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    user: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    q = db.query(StudySession)
+    if user:
+        q = q.filter(StudySession.user_id == user.id)
+    else:
+        q = q.filter(StudySession.user_id.is_(None))
+    if project_id is not None:
+        q = q.filter(StudySession.project_id == project_id)
+    rows = q.order_by(StudySession.created_at.desc()).limit(limit).all()
+    return [_serialize_study_session(r) for r in rows]
+
+
+@app.get("/api/study/stats", response_model=StudyStatsOut)
+def get_study_stats(
+    user: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    q = db.query(StudySession).filter(
+        StudySession.completed == True,
+        StudySession.session_type == "focus",
+    )
+    if user:
+        q = q.filter(StudySession.user_id == user.id)
+    else:
+        q = q.filter(StudySession.user_id.is_(None))
+    all_sessions = q.order_by(StudySession.created_at.desc()).all()
+
+    today = date.today()
+    total_minutes = sum(s.duration_minutes for s in all_sessions)
+    today_sessions = [s for s in all_sessions if s.session_date == today]
+    today_minutes = sum(s.duration_minutes for s in today_sessions)
+    today_count = len(today_sessions)
+
+    # Project breakdown
+    proj_map: dict[int | None, dict[str, Any]] = {}
+    for s in all_sessions:
+        pid = s.project_id
+        if pid not in proj_map:
+            p_name = s.project.name if s.project else "General Study"
+            p_color = s.project.color if s.project else "#6366f1"
+            proj_map[pid] = {
+                "project_id": pid,
+                "project_name": p_name,
+                "project_color": p_color,
+                "minutes": 0,
+                "session_count": 0,
+            }
+        proj_map[pid]["minutes"] += s.duration_minutes
+        proj_map[pid]["session_count"] += 1
+
+    project_breakdown = sorted(proj_map.values(), key=lambda x: x["minutes"], reverse=True)
+
+    # Streak calculation
+    active_dates = {s.session_date for s in all_sessions}
+    streak = 0
+    check_date = today
+    while check_date in active_dates:
+        streak += 1
+        check_date = check_date - timedelta(days=1)
+
+    recent_serialized = [_serialize_study_session(s) for s in all_sessions[:10]]
+
+    return StudyStatsOut(
+        total_focus_minutes=total_minutes,
+        today_focus_minutes=today_minutes,
+        today_sessions_count=today_count,
+        current_streak_days=streak,
+        project_breakdown=project_breakdown,
+        recent_sessions=recent_serialized,
+    )
+
+
+@app.delete("/api/study/sessions/{session_id}")
+def delete_study_session(
+    session_id: int,
+    user: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    q = db.query(StudySession).filter(StudySession.id == session_id)
+    if user:
+        q = q.filter(StudySession.user_id == user.id)
+    else:
+        q = q.filter(StudySession.user_id.is_(None))
+    session = q.first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Study session not found")
+    db.delete(session)
+    db.commit()
+    return {"message": "Study session deleted successfully", "id": session_id}
+
 
 
 # ---------------------------------------------------------------------------

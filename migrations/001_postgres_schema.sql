@@ -152,3 +152,25 @@ CREATE TABLE IF NOT EXISTS journal_templates (
 
 CREATE INDEX IF NOT EXISTS ix_journal_templates_user_id ON journal_templates (user_id);
 CREATE INDEX IF NOT EXISTS ix_journal_templates_is_default ON journal_templates (is_default);
+
+CREATE TABLE IF NOT EXISTS study_sessions (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NULL REFERENCES users(id) ON DELETE CASCADE,
+    project_id INTEGER NULL REFERENCES projects(id) ON DELETE CASCADE,
+    task_id INTEGER NULL REFERENCES tasks(id) ON DELETE SET NULL,
+    note_id INTEGER NULL REFERENCES notes(id) ON DELETE SET NULL,
+    duration_minutes INTEGER NOT NULL DEFAULT 25,
+    session_type VARCHAR(30) NOT NULL DEFAULT 'focus',
+    intention VARCHAR(255) NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    session_date DATE NOT NULL,
+    completed BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS ix_study_sessions_user_id ON study_sessions (user_id);
+CREATE INDEX IF NOT EXISTS ix_study_sessions_project_id ON study_sessions (project_id);
+CREATE INDEX IF NOT EXISTS ix_study_sessions_task_id ON study_sessions (task_id);
+CREATE INDEX IF NOT EXISTS ix_study_sessions_session_date ON study_sessions (session_date);
+CREATE INDEX IF NOT EXISTS ix_study_sessions_completed ON study_sessions (completed);
+

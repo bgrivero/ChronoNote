@@ -452,3 +452,46 @@ class TemplateRenderedOut(BaseModel):
     content_md: str
     template_name: str
 
+
+class StudySessionCreate(BaseModel):
+    project_id: int | None = None
+    task_id: int | None = None
+    note_id: int | None = None
+    duration_minutes: int = Field(default=25, ge=1, le=480)
+    session_type: str = "focus"  # focus, short_break, long_break
+    intention: str = ""
+    notes: str = ""
+    session_date: date | None = None
+    completed: bool = True
+    auto_log_to_journal: bool = True
+    sync_habit_slug: str | None = None
+
+
+class StudySessionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: int | None = None
+    project_id: int | None = None
+    task_id: int | None = None
+    note_id: int | None = None
+    duration_minutes: int
+    session_type: str
+    intention: str
+    notes: str
+    session_date: date
+    completed: bool
+    created_at: datetime
+    project_name: str | None = None
+    project_color: str | None = None
+    task_title: str | None = None
+
+
+class StudyStatsOut(BaseModel):
+    total_focus_minutes: int
+    today_focus_minutes: int
+    today_sessions_count: int
+    current_streak_days: int
+    project_breakdown: list[dict[str, Any]]
+    recent_sessions: list[StudySessionOut]
+

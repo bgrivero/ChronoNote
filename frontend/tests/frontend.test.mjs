@@ -39,6 +39,12 @@ import {
   toggleHabitInMarkdown,
   applyTemplateVariables,
 } from "../src/composables/useHabitsAndHeatmap.js";
+import {
+  formatPomodoroTime,
+  calculatePomodoroProgress,
+  getNextPomodoroMode,
+  formatStudyLogMarkdown,
+} from "../src/composables/useStudyPomodoro.js";
 
 test("Left Sidebar partitions pinned vs regular projects, orders by sidebar_order, and filters archived", () => {
   const sampleProjects = [
@@ -698,4 +704,36 @@ day: {{day_of_week}}
   assert.ok(result.includes("- [ ] Run 5K @habit(run)"));
   assert.ok(!result.includes("Archived Habit"));
 });
+
+test("Study Pomodoro time formatting and circular dashoffset calculations", () => {
+  assert.equal(formatPomodoroTime(1500), "25:00");
+  assert.equal(formatPomodoroTime(65), "01:05");
+  assert.equal(formatPomodoroTime(0), "00:00");
+
+  const progress = calculatePomodoroProgress(750, 1500, 120);
+  assert.equal(progress.percent, 50);
+  // circumference = 2 * PI * 120 ~= 753.98, at 50% dashoffset ~= 376.99
+  assert.ok(progress.dashoffset > 370 && progress.dashoffset < 380);
+});
+
+test("Study Pomodoro interval cycling and markdown auto-log bullet generation", () => {
+  // Cycle 1 focus -> short break
+  const step1 = getNextPomodoroMode("focus", 0);
+  assert.equal(step1.nextMode, "short_break");
+  assert.equal(step1.completedCount, 1);
+
+  // Short break -> focus
+  const step2 = getNextPomodoroMode("short_break", 1);
+  assert.equal(step2.nextMode, "focus");
+
+  // Cycle 4 focus -> long break
+  const step4 = getNextPomodoroMode("focus", 3);
+  assert.equal(step4.nextMode, "long_break");
+  assert.equal(step4.completedCount, 4);
+
+  // Markdown log bullet
+  const bullet = formatStudyLogMarkdown("Neuroscience", 25, "Read chapter 3", "Slides");
+  assert.equal(bullet, "- [x] 🍅 Focus (25m) on [[Neuroscience]] (Slides): Read chapter 3");
+});
+
 

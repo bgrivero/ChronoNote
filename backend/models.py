@@ -37,6 +37,7 @@ class User(Base):
     habits = relationship("Habit", back_populates="owner", cascade="all, delete-orphan")
     habit_logs = relationship("HabitLog", back_populates="owner", cascade="all, delete-orphan")
     templates = relationship("JournalTemplate", back_populates="owner", cascade="all, delete-orphan")
+    study_sessions = relationship("StudySession", back_populates="owner", cascade="all, delete-orphan")
 
 
 class JournalSecret(Base):
@@ -73,6 +74,7 @@ class Project(Base):
     owner = relationship("User", back_populates="projects")
     tasks = relationship("Task", back_populates="project", cascade="all, delete-orphan")
     notes = relationship("Note", back_populates="project", cascade="all, delete-orphan")
+    study_sessions = relationship("StudySession", back_populates="project", cascade="all, delete-orphan")
 
 
 class Task(Base):
@@ -196,4 +198,26 @@ class JournalTemplate(Base):
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
     owner = relationship("User", back_populates="templates")
+
+
+class StudySession(Base):
+    __tablename__ = "study_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True)
+    task_id = Column(Integer, ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True, index=True)
+    note_id = Column(Integer, ForeignKey("notes.id", ondelete="SET NULL"), nullable=True, index=True)
+    duration_minutes = Column(Integer, default=25)
+    session_type = Column(String(30), default="focus")  # focus, short_break, long_break
+    intention = Column(String(255), default="")
+    notes = Column(Text, default="")
+    session_date = Column(Date, nullable=False, index=True)
+    completed = Column(Boolean, default=True, index=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+
+    owner = relationship("User", back_populates="study_sessions")
+    project = relationship("Project", back_populates="study_sessions")
+    task = relationship("Task")
+    note = relationship("Note")
 
