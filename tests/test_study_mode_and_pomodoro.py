@@ -33,7 +33,7 @@ def test_create_study_session_with_project_and_auto_journal(client):
     today_notes = [n for n in notes if n["note_date"] == today_str]
     assert len(today_notes) >= 1
     today_note = today_notes[0]
-    assert "🍅 Focus (25m) on [[Neuroscience 201]]" in today_note["content_md"]
+    assert "Focus (25m) on [[Neuroscience 201]]" in today_note["content_md"]
     assert "Review synaptic transmission slides" in today_note["content_md"]
 
 

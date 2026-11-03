@@ -11,7 +11,7 @@ export const PAPER_THEMES = [
 ];
 
 export const TYPOGRAPHY_THEMES = [
-  { id: "editorial", name: "Editorial Serif", fontHeader: '"Playfair Display", Georgia, serif', fontBody: 'system-ui, -apple-system, sans-serif' },
+  { id: "editorial", name: "Regular Sans (Default)", fontHeader: "var(--font-sans)", fontBody: "var(--font-sans)" },
   { id: "handwritten", name: "Cozy Handwritten", fontHeader: '"Caveat", "Patrick Hand", cursive, serif', fontBody: 'system-ui, -apple-system, sans-serif' },
   { id: "monospace", name: "Clean Monospace", fontHeader: '"JetBrains Mono", "Fira Code", monospace', fontBody: '"JetBrains Mono", monospace' },
 ];

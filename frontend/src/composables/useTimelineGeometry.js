@@ -492,11 +492,13 @@ export function isProjectCompleted(project) {
 }
 
 /**
- * Filter a list of projects by status filter mode ('all' | 'active' | 'done').
+ * Filter a list of projects by status filter mode ('all' | 'active' | 'done' | 'overdue').
  * @param {Array<Object>} projects
- * @param {'all' | 'active' | 'done'} filterMode
+ * @param {'all' | 'active' | 'done' | 'overdue'} filterMode
+ * @param {Object<number, Array<Object>>} [projectTasksMap]
+ * @param {string} [referenceDateIso]
  */
-export function filterProjectsByStatus(projects, filterMode = "active") {
+export function filterProjectsByStatus(projects, filterMode = "active", projectTasksMap = {}, referenceDateIso = null) {
   const list = (projects || []).filter((p) => p.status !== "archived");
   if (filterMode === "active") {
     return list.filter((p) => !isProjectCompleted(p));
@@ -504,21 +506,38 @@ export function filterProjectsByStatus(projects, filterMode = "active") {
   if (filterMode === "done") {
     return list.filter((p) => isProjectCompleted(p));
   }
+  if (filterMode === "overdue") {
+    const today = referenceDateIso || new Date().toISOString().split("T")[0];
+    return list.filter((p) => {
+      if (p.target_date && p.target_date < today && !isProjectCompleted(p)) return true;
+      const tasks = projectTasksMap[p.id] || [];
+      return tasks.some(
+        (t) => t.due_date && t.due_date < today && t.status !== "done" && t.progress !== 100
+      );
+    });
+  }
   return list;
 }
 
 /**
- * Filter a list of subtasks by status filter mode ('all' | 'active' | 'done').
+ * Filter a list of subtasks by status filter mode ('all' | 'active' | 'done' | 'overdue').
  * @param {Array<Object>} tasks
- * @param {'all' | 'active' | 'done'} filterMode
+ * @param {'all' | 'active' | 'done' | 'overdue'} filterMode
+ * @param {string} [referenceDateIso]
  */
-export function filterSubtasksByStatus(tasks, filterMode = "all") {
+export function filterSubtasksByStatus(tasks, filterMode = "all", referenceDateIso = null) {
   const list = tasks || [];
   if (filterMode === "active") {
-    return list.filter((t) => t.status !== "done");
+    return list.filter((t) => t.status !== "done" && t.progress !== 100);
   }
   if (filterMode === "done") {
-    return list.filter((t) => t.status === "done");
+    return list.filter((t) => t.status === "done" || t.progress === 100);
+  }
+  if (filterMode === "overdue") {
+    const today = referenceDateIso || new Date().toISOString().split("T")[0];
+    return list.filter(
+      (t) => t.due_date && t.due_date < today && t.status !== "done" && t.progress !== 100
+    );
   }
   return list;
 }
@@ -637,14 +656,20 @@ export function buildMonthlyWeekRows(
       const prefix = String.fromCharCode(65 + (pIdx % 26));
       const projColor = proj.color || "#ea580c";
 
+      // Milestone Layer Mode: 'all' | 'milestones' | 'spans'
+      const projectDisplayMode = options.projectDisplayMode || "all";
+      const isMilestoneOnly = projectDisplayMode === "milestones";
+
       // 1. Project Span Bar in this week:
       // Show ONLY if the original project is pinned/visible on timeline
       const isOriginalProjectVisible = proj.is_pinned !== false && proj.status !== "archived";
       const shouldShowProjectBar =
         isOriginalProjectVisible &&
+        !isMilestoneOnly &&
         (taskFilterMode === "all" ||
           (taskFilterMode === "active" && !projIsDone) ||
-          (taskFilterMode === "done" && projIsDone));
+          (taskFilterMode === "done" && projIsDone) ||
+          (taskFilterMode === "overdue" && proj.target_date && proj.target_date < todayIso && !projIsDone));
 
       if (shouldShowProjectBar) {
         const pGeom = computeTimelineBarGeometry(
@@ -671,6 +696,34 @@ export function buildMonthlyWeekRows(
             isClippedRight: pGeom.isClippedRight,
           });
         }
+      } else if (isMilestoneOnly && proj.target_date && isOriginalProjectVisible) {
+        // Milestone Layer: long multi-month spans are replaced by a target delivery milestone pin
+        const pTargetGeom = computeTimelineBarGeometry(
+          proj.target_date,
+          proj.target_date,
+          weekStartIso,
+          weekEndIso
+        );
+        if (pTargetGeom.visible) {
+          rawItems.push({
+            uid: `milestone-proj-${proj.id}-w${w + 1}`,
+            kind: "milestone",
+            isMilestone: true,
+            isProjectMilestone: true,
+            projectId: proj.id,
+            projectName: proj.name,
+            status: projIsDone ? "done" : "active",
+            code: "◆",
+            title: `◆ ${proj.name} [Target]`,
+            color: projColor,
+            dateRangeText: `Target: ${proj.target_date}`,
+            startCol: pTargetGeom.startCol,
+            spanCols: 1,
+            endCol: pTargetGeom.startCol,
+            isClippedLeft: false,
+            isClippedRight: false,
+          });
+        }
       }
 
       // 2. Tasks belonging to this project in this week (if subtasks are optionally visible)
@@ -686,27 +739,31 @@ export function buildMonthlyWeekRows(
       if (areSubtasksVisible) {
         const pTasksRaw = (projectTasksMap[proj.id] || []).map((t, idx) => ({
           ...t,
-          code: t.code || `${prefix}${idx + 1}`,
+          code: t.is_milestone ? "◆" : (t.code || `${prefix}${idx + 1}`),
         }));
-        const pTasks = filterSubtasksByStatus(pTasksRaw, taskFilterMode);
+        const pTasks = filterSubtasksByStatus(pTasksRaw, taskFilterMode, todayIso);
 
         for (let tIdx = 0; tIdx < pTasks.length; tIdx += 1) {
           const task = pTasks[tIdx];
           const tGeom = computeTimelineBarGeometry(
-            task.start_date,
-            task.due_date,
+            task.start_date || task.due_date,
+            task.due_date || task.start_date,
             weekStartIso,
             weekEndIso
           );
           if (tGeom.visible) {
+            const isMilestone = Boolean(task.is_milestone);
+            const isOverdue = Boolean(task.due_date && task.due_date < todayIso && task.status !== "done");
             rawItems.push({
               uid: `task-${task.id}-w${w + 1}`,
-              kind: "task",
+              kind: isMilestone ? "milestone" : "task",
+              isMilestone,
+              isOverdue,
               taskId: task.id,
               projectId: proj.id,
               projectName: proj.name,
               code: task.code,
-              title: task.title,
+              title: isMilestone ? `◆ ${task.title}` : task.title,
               status: task.status || "todo",
               color: task.color || "#0891b2",
               dateRangeText: `${task.start_date || ""} → ${task.due_date || ""}`,
@@ -718,6 +775,45 @@ export function buildMonthlyWeekRows(
             });
           }
         }
+      }
+    }
+
+    // Standalone / One-Off Tasks (decoupled from projects)
+    const standaloneTasksRaw = (options.standaloneTasks || projectTasksMap[null] || projectTasksMap[0] || []).map((t) => ({
+      ...t,
+      code: t.is_milestone ? "◆" : (t.code || ""),
+    }));
+    const standaloneFiltered = filterSubtasksByStatus(standaloneTasksRaw, taskFilterMode, todayIso);
+    for (const task of standaloneFiltered) {
+      const sGeom = computeTimelineBarGeometry(
+        task.start_date || task.due_date,
+        task.due_date || task.start_date,
+        weekStartIso,
+        weekEndIso
+      );
+      if (sGeom.visible) {
+        const isMilestone = Boolean(task.is_milestone);
+        const isOverdue = Boolean(task.due_date && task.due_date < todayIso && task.status !== "done");
+        rawItems.push({
+          uid: `standalone-task-${task.id}-w${w + 1}`,
+          kind: isMilestone ? "milestone" : "task",
+          isMilestone,
+          isStandalone: true,
+          isOverdue,
+          taskId: task.id,
+          projectId: null,
+          projectName: "Inbox",
+          code: task.code,
+          title: isMilestone ? `◆ ${task.title}` : task.title,
+          status: task.status || "todo",
+          color: task.color || "#e11d48",
+          dateRangeText: `${task.start_date || ""} → ${task.due_date || ""}`,
+          startCol: sGeom.startCol,
+          spanCols: sGeom.spanCols,
+          endCol: sGeom.startCol + sGeom.spanCols - 1,
+          isClippedLeft: sGeom.isClippedLeft,
+          isClippedRight: sGeom.isClippedRight,
+        });
       }
     }
 
@@ -860,12 +956,17 @@ export function buildFocusedWeekRow(
     const prefix = String.fromCharCode(65 + (pIdx % 26));
     const projColor = proj.color || "#ea580c";
 
+    const projectDisplayMode = options.projectDisplayMode || "all";
+    const isMilestoneOnly = projectDisplayMode === "milestones";
+
     const isOriginalProjectVisible = proj.is_pinned !== false && proj.status !== "archived";
     const shouldShowProjectBar =
       isOriginalProjectVisible &&
+      !isMilestoneOnly &&
       (taskFilterMode === "all" ||
         (taskFilterMode === "active" && !projIsDone) ||
-        (taskFilterMode === "done" && projIsDone));
+        (taskFilterMode === "done" && projIsDone) ||
+        (taskFilterMode === "overdue" && proj.target_date && proj.target_date < todayIso && !projIsDone));
 
     if (shouldShowProjectBar) {
       const pGeom = computeTimelineBarGeometry(
@@ -892,6 +993,33 @@ export function buildFocusedWeekRow(
           isClippedRight: pGeom.isClippedRight,
         });
       }
+    } else if (isMilestoneOnly && proj.target_date && isOriginalProjectVisible) {
+      const pTargetGeom = computeTimelineBarGeometry(
+        proj.target_date,
+        proj.target_date,
+        weekStartIso,
+        weekEndIso
+      );
+      if (pTargetGeom.visible) {
+        rawItems.push({
+          uid: `week-milestone-proj-${proj.id}`,
+          kind: "milestone",
+          isMilestone: true,
+          isProjectMilestone: true,
+          projectId: proj.id,
+          projectName: proj.name,
+          status: projIsDone ? "done" : "active",
+          code: "◆",
+          title: `◆ ${proj.name} [Target]`,
+          color: projColor,
+          dateRangeText: `Target: ${proj.target_date}`,
+          startCol: pTargetGeom.startCol,
+          spanCols: 1,
+          endCol: pTargetGeom.startCol,
+          isClippedLeft: false,
+          isClippedRight: false,
+        });
+      }
     }
 
     const areSubtasksVisible =
@@ -906,27 +1034,31 @@ export function buildFocusedWeekRow(
     if (areSubtasksVisible) {
       const pTasksRaw = (projectTasksMap[proj.id] || []).map((t, idx) => ({
         ...t,
-        code: t.code || `${prefix}${idx + 1}`,
+        code: t.is_milestone ? "◆" : (t.code || `${prefix}${idx + 1}`),
       }));
-      const pTasks = filterSubtasksByStatus(pTasksRaw, taskFilterMode);
+      const pTasks = filterSubtasksByStatus(pTasksRaw, taskFilterMode, todayIso);
 
       for (let tIdx = 0; tIdx < pTasks.length; tIdx += 1) {
         const task = pTasks[tIdx];
         const tGeom = computeTimelineBarGeometry(
-          task.start_date,
-          task.due_date,
+          task.start_date || task.due_date,
+          task.due_date || task.start_date,
           weekStartIso,
           weekEndIso
         );
         if (tGeom.visible) {
+          const isMilestone = Boolean(task.is_milestone);
+          const isOverdue = Boolean(task.due_date && task.due_date < todayIso && task.status !== "done");
           rawItems.push({
             uid: `week-task-${task.id}`,
-            kind: "task",
+            kind: isMilestone ? "milestone" : "task",
+            isMilestone,
+            isOverdue,
             taskId: task.id,
             projectId: proj.id,
             projectName: proj.name,
             code: task.code,
-            title: task.title,
+            title: isMilestone ? `◆ ${task.title}` : task.title,
             status: task.status || "todo",
             color: task.color || "#0891b2",
             dateRangeText: `${task.start_date || ""} → ${task.due_date || ""}`,
@@ -938,6 +1070,45 @@ export function buildFocusedWeekRow(
           });
         }
       }
+    }
+  }
+
+  // Standalone / One-off Tasks in Week View
+  const standaloneTasksRaw = (options.standaloneTasks || projectTasksMap[null] || projectTasksMap[0] || []).map((t) => ({
+    ...t,
+    code: t.is_milestone ? "◆" : (t.code || ""),
+  }));
+  const standaloneFiltered = filterSubtasksByStatus(standaloneTasksRaw, taskFilterMode, todayIso);
+  for (const task of standaloneFiltered) {
+    const sGeom = computeTimelineBarGeometry(
+      task.start_date || task.due_date,
+      task.due_date || task.start_date,
+      weekStartIso,
+      weekEndIso
+    );
+    if (sGeom.visible) {
+      const isMilestone = Boolean(task.is_milestone);
+      const isOverdue = Boolean(task.due_date && task.due_date < todayIso && task.status !== "done");
+      rawItems.push({
+        uid: `week-standalone-task-${task.id}`,
+        kind: isMilestone ? "milestone" : "task",
+        isMilestone,
+        isStandalone: true,
+        isOverdue,
+        taskId: task.id,
+        projectId: null,
+        projectName: "Inbox",
+        code: task.code,
+        title: isMilestone ? `◆ ${task.title}` : task.title,
+        status: task.status || "todo",
+        color: task.color || "#e11d48",
+        dateRangeText: `${task.start_date || ""} → ${task.due_date || ""}`,
+        startCol: sGeom.startCol,
+        spanCols: sGeom.spanCols,
+        endCol: sGeom.startCol + sGeom.spanCols - 1,
+        isClippedLeft: sGeom.isClippedLeft,
+        isClippedRight: sGeom.isClippedRight,
+      });
     }
   }
 

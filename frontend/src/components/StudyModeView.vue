@@ -349,6 +349,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computeRemainingSeconds } from "../composables/useStudyPomodoro.js";
 
 const props = defineProps({
   projects: {
@@ -420,6 +421,7 @@ const stats = ref({
 });
 
 let timerInterval = null;
+let targetEndTime = null;
 let audioCtx = null;
 let ambientSourceNode = null;
 
@@ -534,6 +536,8 @@ async function saveCurrentStudyNote() {
 function switchMode(mode) {
   isRunning.value = false;
   clearInterval(timerInterval);
+  timerInterval = null;
+  targetEndTime = null;
   activeMode.value = mode;
   if (mode === "focus") {
     secondsRemaining.value = focusDurationMin.value * 60;
@@ -552,25 +556,46 @@ function toggleTimer() {
   }
 }
 
+function syncTimerWithTarget() {
+  if (!targetEndTime) return;
+  const remaining = computeRemainingSeconds(targetEndTime);
+  secondsRemaining.value = remaining;
+  if (remaining <= 0) {
+    onIntervalComplete();
+  }
+}
+
 function startTimer() {
+  if (secondsRemaining.value <= 0) {
+    secondsRemaining.value = totalSecondsForMode.value;
+  }
   isRunning.value = true;
+  targetEndTime = Date.now() + secondsRemaining.value * 1000;
+  clearInterval(timerInterval);
   timerInterval = setInterval(() => {
-    if (secondsRemaining.value > 0) {
-      secondsRemaining.value -= 1;
-    } else {
-      onIntervalComplete();
-    }
-  }, 1000);
+    syncTimerWithTarget();
+  }, 250);
 }
 
 function pauseTimer() {
+  if (isRunning.value && targetEndTime) {
+    syncTimerWithTarget();
+  }
   isRunning.value = false;
   clearInterval(timerInterval);
+  timerInterval = null;
+  targetEndTime = null;
 }
 
 function resetTimer() {
   pauseTimer();
   switchMode(activeMode.value);
+}
+
+function handleVisibilityChange() {
+  if (isRunning.value && typeof document !== "undefined" && !document.hidden) {
+    syncTimerWithTarget();
+  }
 }
 
 function skipInterval() {
@@ -746,10 +771,16 @@ async function fetchStudyStats() {
 onMounted(() => {
   onNoteChange();
   fetchStudyStats();
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+  }
 });
 
 onBeforeUnmount(() => {
   clearInterval(timerInterval);
+  if (typeof document !== "undefined") {
+    document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }
   stopAmbientNoise();
   if (audioCtx) {
     try {
@@ -805,7 +836,7 @@ onBeforeUnmount(() => {
 }
 
 .study-title {
-  font-family: var(--font-serif, "Playfair Display", Georgia, serif);
+  font-family: var(--font-sans);
   font-size: 1.85rem;
   margin: 0.2rem 0 0.35rem;
   font-weight: 700;
@@ -998,7 +1029,7 @@ onBeforeUnmount(() => {
   border: none;
   resize: none;
   padding: 1.25rem;
-  font-family: var(--font-serif, "Playfair Display", Georgia, serif);
+  font-family: var(--font-sans);
   font-size: 0.96rem;
   line-height: 1.68;
   color: var(--color-ink, #2d2a26);
