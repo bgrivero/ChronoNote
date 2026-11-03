@@ -2797,6 +2797,18 @@ def seed_demo_workspace(db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
+# Mount MCP (Model Context Protocol) SSE Server for Remote / Cloud Access (e.g. Render)
+# ---------------------------------------------------------------------------
+try:
+    from backend.mcp_server import server as mcp_server
+    from mcp.server.transport_security import TransportSecuritySettings
+    _mcp_security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
+    app.mount("/mcp", mcp_server.sse_app(transport_security=_mcp_security))
+except Exception as _exc:
+    logger.warning("Could not mount MCP SSE app: %s", _exc)
+
+
+# ---------------------------------------------------------------------------
 # Single-Service Production SPA Static Serving (FastAPI serves frontend/dist)
 # ---------------------------------------------------------------------------
 
@@ -2811,7 +2823,7 @@ if (_FRONTEND_DIST / "assets").is_dir():
 
 @app.get("/{full_path:path}", include_in_schema=False)
 def serve_spa_or_static(full_path: str):
-    if full_path.startswith("api/") or full_path.startswith("ws/"):
+    if full_path.startswith("api/") or full_path.startswith("ws/") or full_path.startswith("mcp/"):
         raise HTTPException(status_code=404, detail="Not Found")
     if _FRONTEND_DIST.is_dir():
         candidate = (_FRONTEND_DIST / full_path).resolve()

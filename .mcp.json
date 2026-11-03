@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "chrononote": {
+      "url": "https://chrononote-personal.onrender.com/mcp/sse"
+    },
+    "chrononote-local": {
+      "command": "python",
+      "args": [
+        "run_mcp.py"
+      ],
+      "env": {
+        "PYTHONPATH": "."
+      }
+    }
+  }
+}

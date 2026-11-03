@@ -639,7 +639,7 @@ export function buildMonthlyWeekRows(
 
       // 1. Project Span Bar in this week:
       // Show ONLY if the original project is pinned/visible on timeline
-      const isOriginalProjectVisible = Boolean(proj.is_pinned) && proj.status !== "archived";
+      const isOriginalProjectVisible = proj.is_pinned !== false && proj.status !== "archived";
       const shouldShowProjectBar =
         isOriginalProjectVisible &&
         (taskFilterMode === "all" ||
@@ -860,7 +860,7 @@ export function buildFocusedWeekRow(
     const prefix = String.fromCharCode(65 + (pIdx % 26));
     const projColor = proj.color || "#ea580c";
 
-    const isOriginalProjectVisible = Boolean(proj.is_pinned) && proj.status !== "archived";
+    const isOriginalProjectVisible = proj.is_pinned !== false && proj.status !== "archived";
     const shouldShowProjectBar =
       isOriginalProjectVisible &&
       (taskFilterMode === "all" ||
