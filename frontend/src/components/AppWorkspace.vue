@@ -5923,6 +5923,83 @@ onMounted(async () => {
     </div>
 
     <!-- =====================================================================
+         MCP CLAUDE CONNECT MODAL
+         ===================================================================== -->
+    <div
+      v-if="showMcpModal"
+      class="slideover-backdrop auth-modal-backdrop"
+      @click.self="showMcpModal = false"
+    >
+      <div class="auth-modal-card mcp-modal-card" role="dialog" aria-label="Connect Claude to ChronoNote">
+        <div class="auth-modal-header">
+          <div>
+            <span class="journal-kicker">MODEL CONTEXT PROTOCOL</span>
+            <h2 class="editorial-serif-drawer-title">Connect Claude</h2>
+          </div>
+          <button
+            type="button"
+            class="close-drawer-btn"
+            aria-label="Close"
+            @click="showMcpModal = false"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div class="mcp-modal-body">
+          <p class="mcp-modal-desc">
+            Connect Claude Desktop or Claude Code to your personal ChronoNote workspace.
+          </p>
+
+          <div class="mcp-account-badge">
+            <span class="mcp-badge-label">Active Account:</span>
+            <strong>{{ currentUser?.name || currentUser?.email }}</strong>
+            <span class="mcp-badge-email">({{ currentUser?.email }})</span>
+          </div>
+
+          <div v-if="mcpCodeLoading" class="mcp-loading-state" style="text-align: center; padding: 1.5rem; color: #64748b; font-size: 0.88rem;">
+            Generating temporary connection code...
+          </div>
+
+          <div v-else-if="mcpCodeError" class="ocr-error-msg" style="margin-top: 0.5rem;">
+            {{ mcpCodeError }}
+          </div>
+
+          <div v-else class="mcp-code-container">
+            <div class="mcp-code-label">Your 6-Digit Connection Code</div>
+            <div class="mcp-code-display">
+              <span class="mcp-digits">{{ mcpConnectData?.code || '------' }}</span>
+              <button
+                type="button"
+                class="btn-copy-code"
+                @click="copyMcpCode"
+              >
+                {{ mcpCopied ? 'Copied! ✓' : 'Copy Code' }}
+              </button>
+            </div>
+            <div class="mcp-expires-note">Expires in 15 minutes &bull; Single-use only</div>
+
+            <div class="mcp-instructions-box">
+              <span class="mcp-inst-title">Prompt Claude Desktop or Claude Code:</span>
+              <code>Connect to ChronoNote with code {{ mcpConnectData?.code }}</code>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; padding: 0.5rem 0 0 0;">
+          <button
+            type="button"
+            class="btn-editorial-ghost"
+            style="border: 1px solid var(--border-subtle); padding: 0.45rem 1.1rem; border-radius: 6px; cursor: pointer;"
+            @click="showMcpModal = false"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- =====================================================================
          GOOGLE ACCOUNT SIGN-IN MODAL
          ===================================================================== -->
     <div
