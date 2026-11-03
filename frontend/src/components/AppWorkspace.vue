@@ -4,6 +4,8 @@ import LoginPage from "./LoginPage.vue";
 import ChronoNoteLogo from "./ChronoNoteLogo.vue";
 import HabitHeatmapView from "./HabitHeatmapView.vue";
 import StudyModeView from "./StudyModeView.vue";
+import StickerTrayDrawer from "./StickerTrayDrawer.vue";
+import { filterStickersByTarget } from "../composables/useStickers.js";
 import {
   extractHabitPills,
   toggleHabitInMarkdown,
@@ -1580,6 +1582,125 @@ function handleStudyNoteUpdated(updatedNote) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Sticker System State & Handlers
+// ---------------------------------------------------------------------------
+const stickersList = ref([]);
+const stickerPlacements = ref([]);
+const isStickerDrawerOpen = ref(false);
+const activeStickerTarget = ref({ type: "calendar_date", key: "2026-11-01" });
+
+async function fetchStickers() {
+  try {
+    const res = await fetch(`${API_BASE}/stickers`, { headers: getAuthHeaders() });
+    if (res.ok) {
+      stickersList.value = await res.json();
+    }
+  } catch {
+    // offline
+  }
+}
+
+async function fetchStickerPlacements() {
+  try {
+    const res = await fetch(`${API_BASE}/stickers/placements`, { headers: getAuthHeaders() });
+    if (res.ok) {
+      stickerPlacements.value = await res.json();
+    }
+  } catch {
+    // offline
+  }
+}
+
+async function handleUploadSticker(payload) {
+  try {
+    const res = await fetch(`${API_BASE}/stickers`, {
+      method: "POST",
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      const created = await res.json();
+      stickersList.value.push(created);
+      showNotification({ type: "success", message: `Uploaded sticker "${created.name}"` });
+    }
+  } catch (err) {
+    console.error("Failed to upload sticker:", err);
+  }
+}
+
+async function handleDeleteSticker(stickerId) {
+  try {
+    const res = await fetch(`${API_BASE}/stickers/${stickerId}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
+    if (res.ok) {
+      stickersList.value = stickersList.value.filter((s) => s.id !== stickerId);
+      showNotification({ type: "success", message: "Sticker deleted" });
+    }
+  } catch (err) {
+    console.error("Failed to delete sticker:", err);
+  }
+}
+
+async function handleStampSticker(sticker) {
+  const target = activeStickerTarget.value || { type: "calendar_date", key: selectedJournalDate.value };
+  const randomRot = Math.floor(Math.random() * 25) - 12; // -12 to +12 deg
+  const payload = {
+    sticker_id: sticker.id,
+    sticker_name: sticker.name,
+    image_url: sticker.image_url,
+    target_type: target.type,
+    target_key: String(target.key),
+    pos_x: 50,
+    pos_y: 50,
+    rotation_deg: randomRot,
+    scale: 100,
+  };
+
+  try {
+    const res = await fetch(`${API_BASE}/stickers/placements`, {
+      method: "POST",
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      const created = await res.json();
+      stickerPlacements.value.push(created);
+      showNotification({
+        type: "success",
+        message: `Stamped ${sticker.name} onto ${target.type === 'calendar_date' ? target.key : 'note'}!`,
+      });
+    }
+  } catch (err) {
+    console.error("Failed to place sticker:", err);
+  }
+}
+
+async function handleRemovePlacement(placementId) {
+  try {
+    const res = await fetch(`${API_BASE}/stickers/placements/${placementId}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
+    if (res.ok) {
+      stickerPlacements.value = stickerPlacements.value.filter((p) => p.id !== placementId);
+      showNotification({ type: "success", message: "Removed sticker" });
+    }
+  } catch (err) {
+    console.error("Failed to remove placement:", err);
+  }
+}
+
+function getStickersForDate(isoDate) {
+  return filterStickersByTarget(stickerPlacements.value, "calendar_date", isoDate);
+}
+
+function getStickersForNote(noteKey) {
+  return filterStickersByTarget(stickerPlacements.value, "note", noteKey);
+}
+
 /**
  * Helper to determine if a habit slug is marked completed on a specific date
  */
@@ -2714,6 +2835,8 @@ onMounted(async () => {
   await fetchProjectsAndTimeline();
   await fetchHabitsAndAnalytics();
   await fetchTemplates();
+  await fetchStickers();
+  await fetchStickerPlacements();
 });
 </script>
 
@@ -2851,6 +2974,28 @@ onMounted(async () => {
             <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
           </svg>
           <span>Today’s Journal</span>
+        </button>
+
+        <!-- Stickers Drawer Toggle Button -->
+        <button
+          type="button"
+          class="btn-editorial-ghost hide-on-mobile sticker-toggle-btn"
+          :class="{ active: isStickerDrawerOpen }"
+          title="Aesthetic Stickers & Stamps Palette"
+          @click="
+            activeStickerTarget = {
+              type: activePage === 'journal' ? 'note' : 'calendar_date',
+              key: activePage === 'journal' ? (activeNote?.id || selectedJournalDate) : selectedJournalDate
+            };
+            isStickerDrawerOpen = !isStickerDrawerOpen;
+            if (isStickerDrawerOpen) {
+              fetchStickers();
+              fetchStickerPlacements();
+            }
+          "
+        >
+          <span>🌸 Stickers</span>
+          <span v-if="stickerPlacements.length" class="tab-count">{{ stickerPlacements.length }}</span>
         </button>
 
         <!-- Google Account Pill / Sign-In Trigger -->
@@ -3972,6 +4117,19 @@ onMounted(async () => {
                         + Note
                       </span>
                     </div>
+                    <!-- Calendar Day Placed Stickers -->
+                    <div v-if="getStickersForDate(day.iso).length" class="day-stickers-layer">
+                      <span
+                        v-for="stk in getStickersForDate(day.iso)"
+                        :key="stk.id"
+                        class="calendar-day-sticker"
+                        :style="{ transform: `rotate(${stk.rotation_deg}deg) scale(${stk.scale / 100})` }"
+                        :title="`${stk.sticker_name} (Click to remove)`"
+                        @click.stop="handleRemovePlacement(stk.id)"
+                      >
+                        <img :src="stk.image_url" :alt="stk.sticker_name" class="day-sticker-img" />
+                      </span>
+                    </div>
                     <p v-if="day.hasJournal && day.journalSnippet" class="day-journal-snippet">
                       {{ day.journalSnippet }}
                     </p>
@@ -4250,6 +4408,19 @@ onMounted(async () => {
                       </span>
                       <span v-else class="day-journal-hover-hint">
                         + Note
+                      </span>
+                    </div>
+                    <!-- Calendar Day Placed Stickers -->
+                    <div v-if="getStickersForDate(day.iso).length" class="day-stickers-layer">
+                      <span
+                        v-for="stk in getStickersForDate(day.iso)"
+                        :key="stk.id"
+                        class="calendar-day-sticker"
+                        :style="{ transform: `rotate(${stk.rotation_deg}deg) scale(${stk.scale / 100})` }"
+                        :title="`${stk.sticker_name} (Click to remove)`"
+                        @click.stop="handleRemovePlacement(stk.id)"
+                      >
+                        <img :src="stk.image_url" :alt="stk.sticker_name" class="day-sticker-img" />
                       </span>
                     </div>
                     <p v-if="day.hasJournal && day.journalSnippet" class="day-journal-snippet">
@@ -6197,5 +6368,22 @@ onMounted(async () => {
         </div>
       </div>
     </div>
+
+    <!-- =====================================================================
+         STICKER & STAMP PALETTE DRAWER
+         ===================================================================== -->
+    <StickerTrayDrawer
+      :is-open="isStickerDrawerOpen"
+      :stickers="stickersList"
+      :placements="stickerPlacements"
+      :target-type="activeStickerTarget.type"
+      :target-key="activeStickerTarget.key"
+      :active-date-iso="selectedJournalDate"
+      @close="isStickerDrawerOpen = false"
+      @stamp-sticker="handleStampSticker"
+      @upload-sticker="handleUploadSticker"
+      @delete-sticker="handleDeleteSticker"
+      @remove-placement="handleRemovePlacement"
+    />
   </div>
 </template>

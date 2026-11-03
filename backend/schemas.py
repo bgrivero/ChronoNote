@@ -495,3 +495,57 @@ class StudyStatsOut(BaseModel):
     project_breakdown: list[dict[str, Any]]
     recent_sessions: list[StudySessionOut]
 
+
+class StickerCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    category: str = "custom"
+    image_url: str
+
+
+class StickerOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: int | None = None
+    name: str
+    category: str
+    image_url: str
+    created_at: datetime
+
+
+class StickerPlacementCreate(BaseModel):
+    sticker_id: int | None = None
+    sticker_name: str = "Sticker"
+    image_url: str
+    target_type: str = "calendar_date"
+    target_key: str
+    pos_x: int = 50
+    pos_y: int = 50
+    rotation_deg: int = 0
+    scale: int = 100
+
+
+class StickerPlacementUpdate(BaseModel):
+    pos_x: int | None = None
+    pos_y: int | None = None
+    rotation_deg: int | None = None
+    scale: int | None = None
+
+
+class StickerPlacementOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: int | None = None
+    sticker_id: int | None = None
+    sticker_name: str
+    image_url: str
+    target_type: str
+    target_key: str
+    pos_x: int
+    pos_y: int
+    rotation_deg: int
+    scale: int
+    created_at: datetime
+
+

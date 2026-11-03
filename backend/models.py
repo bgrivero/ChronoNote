@@ -38,6 +38,8 @@ class User(Base):
     habit_logs = relationship("HabitLog", back_populates="owner", cascade="all, delete-orphan")
     templates = relationship("JournalTemplate", back_populates="owner", cascade="all, delete-orphan")
     study_sessions = relationship("StudySession", back_populates="owner", cascade="all, delete-orphan")
+    stickers = relationship("Sticker", back_populates="owner", cascade="all, delete-orphan")
+    sticker_placements = relationship("StickerPlacement", back_populates="owner", cascade="all, delete-orphan")
 
 
 class JournalSecret(Base):
@@ -220,4 +222,39 @@ class StudySession(Base):
     project = relationship("Project", back_populates="study_sessions")
     task = relationship("Task")
     note = relationship("Note")
+
+
+class Sticker(Base):
+    __tablename__ = "stickers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    name = Column(String(120), nullable=False)
+    category = Column(String(60), default="custom", index=True)  # preset, custom, mood, study, decor
+    image_url = Column(Text, nullable=False)  # data URI or URL
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+
+    owner = relationship("User", back_populates="stickers")
+    placements = relationship("StickerPlacement", back_populates="sticker", cascade="all, delete-orphan")
+
+
+class StickerPlacement(Base):
+    __tablename__ = "sticker_placements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    sticker_id = Column(Integer, ForeignKey("stickers.id", ondelete="SET NULL"), nullable=True, index=True)
+    sticker_name = Column(String(120), nullable=False, default="Sticker")
+    image_url = Column(Text, nullable=False)
+    target_type = Column(String(40), nullable=False, index=True)  # 'calendar_date' | 'note'
+    target_key = Column(String(120), nullable=False, index=True)  # '2026-11-04' or note slug/id
+    pos_x = Column(Integer, default=50)  # percentage 0..100
+    pos_y = Column(Integer, default=50)  # percentage 0..100
+    rotation_deg = Column(Integer, default=0)  # -180..180
+    scale = Column(Integer, default=100)  # percentage 50..200
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+
+    owner = relationship("User", back_populates="sticker_placements")
+    sticker = relationship("Sticker", back_populates="placements")
+
 

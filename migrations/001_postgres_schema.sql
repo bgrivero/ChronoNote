@@ -174,3 +174,36 @@ CREATE INDEX IF NOT EXISTS ix_study_sessions_task_id ON study_sessions (task_id)
 CREATE INDEX IF NOT EXISTS ix_study_sessions_session_date ON study_sessions (session_date);
 CREATE INDEX IF NOT EXISTS ix_study_sessions_completed ON study_sessions (completed);
 
+CREATE TABLE IF NOT EXISTS stickers (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(120) NOT NULL,
+    category VARCHAR(60) NOT NULL DEFAULT 'custom',
+    image_url TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS ix_stickers_user_id ON stickers (user_id);
+CREATE INDEX IF NOT EXISTS ix_stickers_category ON stickers (category);
+
+CREATE TABLE IF NOT EXISTS sticker_placements (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NULL REFERENCES users(id) ON DELETE CASCADE,
+    sticker_id INTEGER NULL REFERENCES stickers(id) ON DELETE SET NULL,
+    sticker_name VARCHAR(120) NOT NULL DEFAULT 'Sticker',
+    image_url TEXT NOT NULL,
+    target_type VARCHAR(40) NOT NULL,
+    target_key VARCHAR(120) NOT NULL,
+    pos_x INTEGER NOT NULL DEFAULT 50,
+    pos_y INTEGER NOT NULL DEFAULT 50,
+    rotation_deg INTEGER NOT NULL DEFAULT 0,
+    scale INTEGER NOT NULL DEFAULT 100,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS ix_sticker_placements_user_id ON sticker_placements (user_id);
+CREATE INDEX IF NOT EXISTS ix_sticker_placements_sticker_id ON sticker_placements (sticker_id);
+CREATE INDEX IF NOT EXISTS ix_sticker_placements_target_type ON sticker_placements (target_type);
+CREATE INDEX IF NOT EXISTS ix_sticker_placements_target_key ON sticker_placements (target_key);
+
+

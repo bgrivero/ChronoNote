@@ -1,82 +1,74 @@
-# ChronoNote Model Context Protocol (MCP) Configuration & Claude Integration Guide
+# ChronoNote Model Context Protocol (MCP) — Multi-User Authentication Guide
 
-ChronoNote is configured with full **Model Context Protocol (MCP)** integration so Claude (via **Claude Desktop**, **Claude Code CLI**, or **Cursor / VS Code**) can directly inspect, create, and manage projects, tasks, and notes in your local ChronoNote workspace.
+ChronoNote features secure **Multi-User Account Authentication** over the Model Context Protocol (MCP).
 
----
-
-## 1. What Has Been Configured
-
-Everything is set up and configured locally on your machine:
-
-1. **MCP Server Core (`backend/mcp_server.py`)**:
-   - Implements native MCP tools using the official `mcp` 2.x standard (`MCPServer`).
-   - Connects directly to ChronoNote's SQLite or PostgreSQL database via SQLAlchemy ORM.
-   - Automatically maps created projects to your primary user (`brycerivero@gmail.com`).
-   - Emits real-time WebSocket notifications (`project.created`, `task.updated`, `note.synced`) so any open ChronoNote browser window updates instantly.
-
-2. **Launcher Script (`run_mcp.py`)**:
-   - Root-level entry point that sets up Python paths and launches the MCP server over standard input/output (`stdio`).
-
-3. **Claude Desktop Configuration (`%APPDATA%\Claude\claude_desktop_config.json`)**:
-   - Configured with the absolute path to Python 3.15 and `run_mcp.py` so Claude Desktop automatically launches the ChronoNote MCP tools whenever Claude Desktop opens.
-
-4. **Claude Code & Editor Configuration (`.mcp.json` & `~/.claude.json`)**:
-   - Configured for Claude Code CLI and Cursor/VS Code in the project root.
-
-5. **Automated Test Suite (`tests/test_mcp_server.py`)**:
-   - 4 automated tests verifying tool registration, project creation, bulk task insertion, note creation with Markdown frontmatter/wikilinks/tasks, and project updates.
+Just like connecting GitHub, Notion, or Linear:
+- **No hardcoded user accounts**: The server never assumes who you are.
+- **Strict User Isolation**: Claude only has access to projects, tasks, and notes belonging to the currently logged-in account.
+- **Authentication Required**: Calling any project or workspace tool without logging in prompts the user to authenticate first.
 
 ---
 
-## 2. Available MCP Tools for Claude
+## 1. How to Authenticate in Claude
 
-Claude has access to the following 7 tools:
+When you connect Claude or ask Claude to do something, Claude will prompt you to connect your ChronoNote account.
 
-| Tool | Purpose | Key Arguments |
-|------|---------|---------------|
-| `create_project` | Creates a new project in ChronoNote. | `name`, `description`, `color`, `icon`, `status`, `is_pinned`, `start_date`, `target_date` |
-| `create_project_with_tasks` | Creates a project **and** its initial timeline/Kanban tasks and Markdown note in a single call. | `name`, `tasks: [{title, status, priority, due_date, is_milestone}]`, `initial_note` |
-| `list_projects` | Lists all projects with rollup statistics (task count, progress %, overdue count). | `status_filter` (`active`, `planned`, etc.) |
-| `get_project` | Fetches full project details including all tasks, dates, and linked notes. | `project_id` or `slug` |
-| `create_task` | Adds an individual task or milestone to an existing project. | `project_id`, `title`, `description`, `status`, `priority`, `start_date`, `due_date`, `is_milestone` |
-| `update_project` | Updates title, status, pin state, or dates of an existing project. | `project_id`, `name`, `status`, `color`, `icon`, `is_pinned`, `target_date` |
-| `create_project_note` | Creates a Markdown note attached to a project (auto-parses `#tags`, `[[WikiLinks]]`, and `@directives`). | `project_id`, `title`, `content` |
+### Option A: Email & Password
+If you registered your account with an email and password:
+> *"Claude, log in to ChronoNote with email `your@email.com` and password `yourpassword`"*
 
----
+Claude calls the `login` tool, verifies your credentials against the PBKDF2 hash in the database, and unlocks your workspace.
 
-## 3. Example Prompts You Can Give Claude Locally
+### Option B: 6-Digit Connection Code (Recommended for Google Sign-In)
+If you sign in using Google OAuth:
+1. Open your browser and go to your ChronoNote app:
+   ```
+   https://chrononote-personal.onrender.com/api/auth/mcp-code
+   ```
+   *(or `http://localhost:8000/api/auth/mcp-code` if running locally)*
+2. It displays your 6-digit temporary connection code (valid for 15 minutes), for example: `849201`.
+3. In Claude, simply tell it:
+   > *"Connect to ChronoNote with code 849201"*
 
-Open **Claude Desktop** (or run `claude` in your terminal in this folder) and prompt naturally:
-
-### Example 1: Creating a Full Project with Tasks
-> *"Claude, create a new active project in ChronoNote called 'Q1 Growth Marketing' with a purple color and target icon. Add three tasks: 'Launch Landing Page' (urgent, milestone, due 2026-11-15), 'Set up Newsletter Automation' (high priority, due 2026-11-20), and 'Run Ad Campaign' (medium priority, due 2026-11-30). Also create a brief project note with our key performance indicators."*
-
-### Example 2: Inspecting Current Projects
-> *"What projects do I currently have in ChronoNote, and what are their completion percentages?"*
-
-### Example 3: Adding Tasks to an Existing Project
-> *"Add a high-priority milestone task 'Security Audit' to project 'ChronoNote Core Engine' due next Friday."*
-
-### Example 4: Quick Project Creation
-> *"Create a planned project called 'Home Server Setup' with a green color and server icon."*
+Claude calls the `connect_with_code` tool, validates your code, and permanently links your session!
 
 ---
 
+## 2. Session Persistence & Security
+
+- **Stay Logged In**: Once you log in or connect with code in Claude Desktop, your authenticated session is saved locally in `~/.chrononote_mcp_session.json` so you don't need to re-login every time Claude opens.
+- **Logout Anytime**: You can tell Claude: *"Log out of ChronoNote"*, which invokes the `logout` tool and locks all workspace tools immediately.
+- **Who am I?**: You can ask Claude: *"Which ChronoNote account am I logged into?"*, which calls `whoami` to verify your active user ID and email.
+
 ---
 
-## 5. Deployed to Render (Always-On Remote MCP)
+## 3. Available MCP Tools
 
-### Does it work on Render?
-**Yes!** The MCP server is mounted directly into the FastAPI application at `/mcp/sse`. With your Render service deployed:
-- Render hosts your FastAPI application 24/7.
-- The MCP server is continuously live at:
-  ```
-  https://chrononote-personal.onrender.com/mcp/sse
-  ```
+### Authentication Tools
+| Tool | Purpose | Arguments |
+|------|---------|-----------|
+| `login` | Authenticate with ChronoNote account email and password. | `email`, `password` |
+| `connect_with_code` | Connect using a 6-digit one-time code from the web app. | `code` |
+| `connect_with_token` | Connect using an existing ChronoNote session token. | `token` |
+| `whoami` | Check current authenticated account and status. | None |
+| `logout` | Log out and lock all tools. | None |
 
-### Configured Claude Settings
-Both your `%APPDATA%\Claude\claude_desktop_config.json` and `.mcp.json` are now pre-configured with your exact Render URL:
+### Workspace Tools (Requires Authentication)
+| Tool | Purpose | User Scoping |
+|------|---------|--------------|
+| `list_projects` | Lists all your projects and stats. | Only returns your projects (`user_id == current_user.id`) |
+| `get_project` | Fetches project tasks, notes, deadlines. | Verifies ownership before returning data |
+| `create_project` | Creates a new project. | Automatically assigned to your account |
+| `create_project_with_tasks` | Creates a project with tasks & note. | Automatically assigned to your account |
+| `create_task` | Adds a task/milestone to a project. | Verifies project ownership |
+| `update_project` | Updates project metadata/status. | Verifies project ownership |
+| `create_project_note` | Creates a linked Markdown note. | Verifies project ownership |
 
+---
+
+## 4. Claude Desktop & Claude Code Configuration
+
+### Claude Desktop (`%APPDATA%\Claude\claude_desktop_config.json`)
 ```json
 {
   "mcpServers": {
@@ -95,8 +87,3 @@ Both your `%APPDATA%\Claude\claude_desktop_config.json` and `.mcp.json` are now 
   }
 }
 ```
-
-### Do you ever have to manually start it up?
-**No! You never have to manually run or start anything:**
-- **Locally**: When using local stdio, Claude Desktop spawns `run_mcp.py` in the background automatically every time Claude opens. You do not need to open a terminal or start the web server.
-- **On Render**: Render runs 24/7 in the cloud. Claude simply connects to your Render HTTPS URL on demand.

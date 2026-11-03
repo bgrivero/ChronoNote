@@ -1,6 +1,13 @@
 """ChronoNote MCP Server
 Provides Model Context Protocol (MCP) tools for AI assistants (like Claude)
 to inspect, create, and manage projects, tasks, and notes in ChronoNote.
+
+Authentication:
+All workspace operations require authentication. Users authenticate via:
+1. `login(email, password)`
+2. `connect_with_code(code)` (using a 6-digit code from ChronoNote web app)
+3. `connect_with_token(token)`
+Once authenticated, Claude is locked strictly to that user's private workspace.
 """
 
 from __future__ import annotations
@@ -11,31 +18,35 @@ from datetime import date, datetime
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
+from sqlalchemy import func
 
 from backend.database import SessionLocal
 from backend.models import Note, NoteLink, Project, Task, User
+from backend.services.auth_service import (
+    create_session_token,
+    verify_password,
+    verify_session_token,
+)
 from backend.services.markdown_parser import parse_markdown_note, slugify
+from backend.services.mcp_auth import (
+    clear_local_session,
+    resolve_authenticated_user,
+    save_local_session,
+    set_active_user_id,
+    verify_and_consume_code,
+)
 from backend.services.ws_manager import ws_manager
 
 server = MCPServer("ChronoNote")
 
-
-def _resolve_user(db, user_email: str | None = None) -> User | None:
-    """Resolve the target user for project ownership."""
-    target_email = user_email or os.getenv("CHRONONOTE_USER_EMAIL")
-    if target_email:
-        user = db.query(User).filter(User.email == target_email.strip()).first()
-        if user:
-            return user
-
-    # Default to primary local user if available (e.g. brycerivero@gmail.com)
-    bryce = db.query(User).filter(User.email == "brycerivero@gmail.com").first()
-    if bryce:
-        return bryce
-
-    # Fallback to the first user registered in the system
-    first_user = db.query(User).order_by(User.id.asc()).first()
-    return first_user
+AUTH_REQUIRED_MESSAGE = (
+    "Authentication required. You must log in to your ChronoNote account before accessing or creating projects.\n\n"
+    "How to log in:\n"
+    "1. If your account has a password: Call the 'login' tool with your email and password.\n"
+    "2. If you use Google Sign-In: Log in to ChronoNote (https://chrononote-personal.onrender.com/api/auth/mcp-code) "
+    "to get your 6-digit connection code, then call 'connect_with_code(code)'.\n"
+    "3. If you have a session token: Call 'connect_with_token(token)'."
+)
 
 
 def _unique_project_slug(db, base_slug: str, exclude_id: int | None = None) -> str:
@@ -210,23 +221,215 @@ def _format_project(proj: Project, include_tasks: bool = False, include_notes: b
     return data
 
 
+# ---------------------------------------------------------------------------
+# Authentication & Connection Tools
+# ---------------------------------------------------------------------------
+
+
 @server.tool()
-def list_projects(
-    status_filter: str | None = None,
-    user_email: str | None = None,
-) -> dict[str, Any]:
-    """List all projects in ChronoNote with rollup metrics (task counts, progress).
+def login(email: str, password: str) -> dict[str, Any]:
+    """Log in to your ChronoNote account using your email and password.
 
     Args:
-        status_filter: Optional filter ('planned', 'active', 'on_hold', 'completed', 'archived').
-        user_email: Optional user email to filter for (defaults to primary user).
+        email: Your ChronoNote registered email address.
+        password: Your ChronoNote account password.
     """
     db = SessionLocal()
     try:
-        user = _resolve_user(db, user_email)
-        q = db.query(Project)
-        if user:
-            q = q.filter(Project.user_id == user.id)
+        clean_email = email.strip().lower()
+        user = db.query(User).filter(func.lower(User.email) == clean_email).first()
+        if not user:
+            return {
+                "success": False,
+                "authenticated": False,
+                "error": f"No ChronoNote account found with email '{email}'.",
+            }
+
+        if not user.password_hash or not user.salt:
+            return {
+                "success": False,
+                "authenticated": False,
+                "error": (
+                    f"The account '{email}' was created via Google Sign-In and does not have a direct password set.\n"
+                    "To connect with Claude, please visit https://chrononote-personal.onrender.com/api/auth/mcp-code "
+                    "in your browser to get a 6-digit connection code, then call 'connect_with_code(code)'."
+                ),
+            }
+
+        if not verify_password(password, user.password_hash, user.salt):
+            return {
+                "success": False,
+                "authenticated": False,
+                "error": "Incorrect password. Please verify your credentials.",
+            }
+
+        token, _ = create_session_token(user.id, user.email, user.name)
+        set_active_user_id(user.id)
+        save_local_session(token, user.id, user.email)
+
+        return {
+            "success": True,
+            "authenticated": True,
+            "message": f"Successfully authenticated as {user.name} ({user.email}). All ChronoNote tools are now unlocked for your account.",
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "name": user.name,
+            },
+        }
+    finally:
+        db.close()
+
+
+@server.tool()
+def connect_with_code(code: str) -> dict[str, Any]:
+    """Connect Claude to your ChronoNote account using a 6-digit connection code.
+    You can generate this code by visiting /api/auth/mcp-code while logged into ChronoNote in your browser.
+
+    Args:
+        code: 6-digit temporary connection code.
+    """
+    db = SessionLocal()
+    try:
+        entry = verify_and_consume_code(code)
+        if not entry:
+            return {
+                "success": False,
+                "authenticated": False,
+                "error": (
+                    "Invalid or expired 6-digit connection code.\n"
+                    "Please visit https://chrononote-personal.onrender.com/api/auth/mcp-code "
+                    "in your browser while logged in to generate a fresh code."
+                ),
+            }
+
+        uid = entry["user_id"]
+        user = db.query(User).filter(User.id == uid).first()
+        if not user:
+            return {
+                "success": False,
+                "authenticated": False,
+                "error": "User account matching connection code no longer exists.",
+            }
+
+        token, _ = create_session_token(user.id, user.email, user.name)
+        set_active_user_id(user.id)
+        save_local_session(token, user.id, user.email)
+
+        return {
+            "success": True,
+            "authenticated": True,
+            "message": f"Successfully connected to ChronoNote as {user.name} ({user.email})! Your workspace is now active.",
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "name": user.name,
+            },
+        }
+    finally:
+        db.close()
+
+
+@server.tool()
+def connect_with_token(token: str) -> dict[str, Any]:
+    """Connect Claude to your ChronoNote account using an active session token.
+
+    Args:
+        token: ChronoNote Bearer session token.
+    """
+    db = SessionLocal()
+    try:
+        claims = verify_session_token(token.strip())
+        if not claims or not claims.get("sub"):
+            return {
+                "success": False,
+                "authenticated": False,
+                "error": "Invalid or expired session token.",
+            }
+
+        uid = int(claims["sub"])
+        user = db.query(User).filter(User.id == uid).first()
+        if not user:
+            return {
+                "success": False,
+                "authenticated": False,
+                "error": "User account matching token does not exist.",
+            }
+
+        set_active_user_id(user.id)
+        save_local_session(token.strip(), user.id, user.email)
+
+        return {
+            "success": True,
+            "authenticated": True,
+            "message": f"Successfully authenticated as {user.name} ({user.email}).",
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "name": user.name,
+            },
+        }
+    finally:
+        db.close()
+
+
+@server.tool()
+def whoami() -> dict[str, Any]:
+    """Check the currently authenticated ChronoNote user account."""
+    db = SessionLocal()
+    try:
+        user = resolve_authenticated_user(db)
+        if not user:
+            return {
+                "authenticated": False,
+                "message": "Not logged in to ChronoNote. Use the 'login' or 'connect_with_code' tool to connect your account.",
+            }
+        return {
+            "authenticated": True,
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "name": user.name,
+            },
+            "message": f"Currently authenticated as {user.name} ({user.email}).",
+        }
+    finally:
+        db.close()
+
+
+@server.tool()
+def logout() -> dict[str, Any]:
+    """Log out of the current ChronoNote account and lock all workspace tools."""
+    clear_local_session()
+    return {
+        "success": True,
+        "authenticated": False,
+        "message": "Successfully logged out of ChronoNote. Workspace tools are now locked.",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Workspace Management Tools (Strictly User-Scoped)
+# ---------------------------------------------------------------------------
+
+
+@server.tool()
+def list_projects(
+    status_filter: str | None = None,
+) -> dict[str, Any]:
+    """List all projects in your ChronoNote workspace with task counts and progress.
+    Requires authentication. Only displays projects belonging to the logged-in user.
+
+    Args:
+        status_filter: Optional filter ('planned', 'active', 'on_hold', 'completed', 'archived').
+    """
+    db = SessionLocal()
+    try:
+        user = resolve_authenticated_user(db)
+        if not user:
+            return {"success": False, "authenticated": False, "error": AUTH_REQUIRED_MESSAGE}
+
+        q = db.query(Project).filter(Project.user_id == user.id)
 
         if status_filter:
             q = q.filter(Project.status == status_filter.strip().lower())
@@ -242,7 +445,7 @@ def list_projects(
         return {
             "success": True,
             "count": len(projects),
-            "user": user.email if user else None,
+            "user": user.email,
             "projects": [_format_project(p) for p in projects],
         }
     finally:
@@ -255,6 +458,7 @@ def get_project(
     slug: str | None = None,
 ) -> dict[str, Any]:
     """Retrieve complete project details including all tasks, notes, and timeline metrics.
+    Only allows access to projects owned by the currently authenticated user.
 
     Args:
         project_id: The integer ID of the project.
@@ -265,14 +469,18 @@ def get_project(
 
     db = SessionLocal()
     try:
-        q = db.query(Project)
+        user = resolve_authenticated_user(db)
+        if not user:
+            return {"success": False, "authenticated": False, "error": AUTH_REQUIRED_MESSAGE}
+
+        q = db.query(Project).filter(Project.user_id == user.id)
         if project_id:
             proj = q.filter(Project.id == project_id).first()
         else:
             proj = q.filter(Project.slug == slug.strip()).first()
 
         if not proj:
-            return {"success": False, "error": f"Project not found (id={project_id}, slug='{slug}')"}
+            return {"success": False, "error": f"Project not found or you do not have permission to view it."}
 
         return {
             "success": True,
@@ -292,9 +500,9 @@ def create_project(
     is_pinned: bool = False,
     start_date: str | None = None,
     target_date: str | None = None,
-    user_email: str | None = None,
 ) -> dict[str, Any]:
-    """Create a new project in ChronoNote.
+    """Create a new project in your ChronoNote workspace.
+    The created project is strictly owned by the logged-in user.
 
     Args:
         name: Name of the project (required, e.g. 'Website Redesign', 'Mobile App MVP').
@@ -305,20 +513,22 @@ def create_project(
         is_pinned: If True, pins the project to the top of the left sidebar. Default: False.
         start_date: Start date formatted as 'YYYY-MM-DD' (optional).
         target_date: Target or deadline date formatted as 'YYYY-MM-DD' (optional).
-        user_email: Optional user email (defaults to primary user brycerivero@gmail.com).
     """
     db = SessionLocal()
     try:
-        user = _resolve_user(db, user_email)
+        user = resolve_authenticated_user(db)
+        if not user:
+            return {"success": False, "authenticated": False, "error": AUTH_REQUIRED_MESSAGE}
+
         base_slug = slugify(name)
         unique_slug = _unique_project_slug(db, base_slug)
 
         parsed_start = _parse_date(start_date)
         parsed_target = _parse_date(target_date)
-        max_order = db.query(Project).count()
+        max_order = db.query(Project).filter(Project.user_id == user.id).count()
 
         proj = Project(
-            user_id=user.id if user else None,
+            user_id=user.id,
             name=name.strip(),
             slug=unique_slug,
             description=description.strip(),
@@ -335,13 +545,13 @@ def create_project(
         db.refresh(proj)
 
         try:
-            ws_manager.emit_from_sync("project.created", {"id": proj.id, "name": proj.name})
+            ws_manager.emit_from_sync("project.created", {"id": proj.id, "name": proj.name, "user_id": user.id})
         except Exception:
             pass
 
         return {
             "success": True,
-            "message": f"Project '{proj.name}' created successfully with slug '{proj.slug}'.",
+            "message": f"Project '{proj.name}' created for {user.email} with slug '{proj.slug}'.",
             "project": _format_project(proj),
         }
     except Exception as exc:
@@ -363,43 +573,37 @@ def create_project_with_tasks(
     start_date: str | None = None,
     target_date: str | None = None,
     initial_note: str | None = None,
-    user_email: str | None = None,
 ) -> dict[str, Any]:
-    """Create a new project in ChronoNote along with an initial set of timeline/Kanban tasks and an optional note.
+    """Create a new project in your ChronoNote workspace along with tasks and a brief note.
+    Strictly isolated to your logged-in account.
 
     Args:
         name: Project title (e.g. 'Q1 Marketing Sprint', 'API Migration').
         description: Description of the project goals.
-        tasks: List of task dicts. Each dict can specify:
-               - title: str (required)
-               - description: str (optional)
-               - status: 'todo' | 'in_progress' | 'review' | 'done' (default 'todo')
-               - priority: 'low' | 'medium' | 'high' | 'urgent' (default 'medium')
-               - start_date: 'YYYY-MM-DD' (optional)
-               - due_date: 'YYYY-MM-DD' (optional)
-               - is_milestone: bool (default False)
-               - progress: int (0 to 100, default 0)
+        tasks: List of task dicts (title, description, status, priority, due_date, is_milestone).
         color: Hex color (default '#6366f1').
-        icon: Lucide icon name (default 'folder', e.g. 'rocket', 'target', 'code').
+        icon: Lucide icon name (default 'folder').
         status: 'planned' | 'active' | 'on_hold' | 'completed' (default 'active').
         is_pinned: Whether to pin project in sidebar (default False).
-        start_date: Overall project start date 'YYYY-MM-DD' (optional).
-        target_date: Overall project target date 'YYYY-MM-DD' (optional).
+        start_date: Project start date 'YYYY-MM-DD' (optional).
+        target_date: Project target date 'YYYY-MM-DD' (optional).
         initial_note: Optional Markdown text to create as a project brief note.
-        user_email: User email to assign ownership (defaults to primary user).
     """
     db = SessionLocal()
     try:
-        user = _resolve_user(db, user_email)
+        user = resolve_authenticated_user(db)
+        if not user:
+            return {"success": False, "authenticated": False, "error": AUTH_REQUIRED_MESSAGE}
+
         base_slug = slugify(name)
         unique_slug = _unique_project_slug(db, base_slug)
 
         parsed_start = _parse_date(start_date)
         parsed_target = _parse_date(target_date)
-        max_order = db.query(Project).count()
+        max_order = db.query(Project).filter(Project.user_id == user.id).count()
 
         proj = Project(
-            user_id=user.id if user else None,
+            user_id=user.id,
             name=name.strip(),
             slug=unique_slug,
             description=description.strip(),
@@ -451,7 +655,7 @@ def create_project_with_tasks(
                 counter += 1
 
             note_obj = Note(
-                user_id=user.id if user else None,
+                user_id=user.id,
                 project_id=proj.id,
                 title=f"{proj.name} — Overview & Brief",
                 slug=cand_slug,
@@ -468,13 +672,13 @@ def create_project_with_tasks(
         db.refresh(proj)
 
         try:
-            ws_manager.emit_from_sync("project.created", {"id": proj.id, "name": proj.name})
+            ws_manager.emit_from_sync("project.created", {"id": proj.id, "name": proj.name, "user_id": user.id})
         except Exception:
             pass
 
         return {
             "success": True,
-            "message": f"Project '{proj.name}' created with {len(created_tasks)} tasks.",
+            "message": f"Project '{proj.name}' created for {user.email} with {len(created_tasks)} tasks.",
             "project": _format_project(proj, include_tasks=True, include_notes=True),
         }
     except Exception as exc:
@@ -499,6 +703,7 @@ def create_task(
     progress: int = 0,
 ) -> dict[str, Any]:
     """Add a new task or milestone to an existing ChronoNote project.
+    Verifies that you own the project before adding the task.
 
     Args:
         project_id: Integer ID of the target project.
@@ -515,9 +720,13 @@ def create_task(
     """
     db = SessionLocal()
     try:
-        proj = db.query(Project).filter(Project.id == project_id).first()
+        user = resolve_authenticated_user(db)
+        if not user:
+            return {"success": False, "authenticated": False, "error": AUTH_REQUIRED_MESSAGE}
+
+        proj = db.query(Project).filter(Project.id == project_id, Project.user_id == user.id).first()
         if not proj:
-            return {"success": False, "error": f"Project with ID {project_id} not found."}
+            return {"success": False, "error": f"Project with ID {project_id} not found or permission denied."}
 
         parsed_status = status.strip().lower() if status else "todo"
         task_prog = 100 if parsed_status == "done" else max(0, min(100, int(progress)))
@@ -579,6 +788,7 @@ def update_project(
     target_date: str | None = None,
 ) -> dict[str, Any]:
     """Update metadata, timeline dates, status, or pin state of an existing project.
+    Verifies that you own the project.
 
     Args:
         project_id: ID of the project to update.
@@ -593,9 +803,13 @@ def update_project(
     """
     db = SessionLocal()
     try:
-        proj = db.query(Project).filter(Project.id == project_id).first()
+        user = resolve_authenticated_user(db)
+        if not user:
+            return {"success": False, "authenticated": False, "error": AUTH_REQUIRED_MESSAGE}
+
+        proj = db.query(Project).filter(Project.id == project_id, Project.user_id == user.id).first()
         if not proj:
-            return {"success": False, "error": f"Project with ID {project_id} not found."}
+            return {"success": False, "error": f"Project with ID {project_id} not found or permission denied."}
 
         if name is not None:
             proj.name = name.strip()
@@ -618,7 +832,7 @@ def update_project(
         db.refresh(proj)
 
         try:
-            ws_manager.emit_from_sync("project.created", {"id": proj.id, "name": proj.name})
+            ws_manager.emit_from_sync("project.created", {"id": proj.id, "name": proj.name, "user_id": user.id})
         except Exception:
             pass
 
@@ -639,7 +853,6 @@ def create_project_note(
     project_id: int,
     title: str,
     content: str,
-    user_email: str | None = None,
 ) -> dict[str, Any]:
     """Create a Markdown note linked to a project in ChronoNote.
     Supports #tags, [[WikiLinks]], and inline task directives:
@@ -649,15 +862,17 @@ def create_project_note(
         project_id: The ID of the project to attach the note to.
         title: Note title.
         content: Markdown content.
-        user_email: Optional user email.
     """
     db = SessionLocal()
     try:
-        proj = db.query(Project).filter(Project.id == project_id).first()
-        if not proj:
-            return {"success": False, "error": f"Project with ID {project_id} not found."}
+        user = resolve_authenticated_user(db)
+        if not user:
+            return {"success": False, "authenticated": False, "error": AUTH_REQUIRED_MESSAGE}
 
-        user = _resolve_user(db, user_email)
+        proj = db.query(Project).filter(Project.id == project_id, Project.user_id == user.id).first()
+        if not proj:
+            return {"success": False, "error": f"Project with ID {project_id} not found or permission denied."}
+
         note_slug = slugify(title)
 
         counter = 2
@@ -667,7 +882,7 @@ def create_project_note(
             counter += 1
 
         note_obj = Note(
-            user_id=user.id if user else None,
+            user_id=user.id,
             project_id=project_id,
             title=title.strip(),
             slug=cand_slug,

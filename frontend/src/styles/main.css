@@ -3764,4 +3764,56 @@ body {
   border-top: 1px solid var(--border-subtle);
 }
 
+/* Calendar Day Sticker Layer */
+.day-stickers-layer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 2px;
+  pointer-events: auto;
+}
+
+.calendar-day-sticker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.12));
+}
+
+.calendar-day-sticker:hover {
+  transform: scale(1.25) !important;
+}
+
+.day-sticker-img {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+
+.sticker-toggle-btn.active {
+  background: #fdf2f8;
+  border-color: #f472b6;
+  color: #db2777;
+}
+
+.note-stickers-strip {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.note-page-sticker {
+  cursor: pointer;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.1));
+}
+
+.note-sticker-img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+
+
 

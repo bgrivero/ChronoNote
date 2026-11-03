@@ -45,6 +45,11 @@ import {
   getNextPomodoroMode,
   formatStudyLogMarkdown,
 } from "../src/composables/useStudyPomodoro.js";
+import {
+  computeStickerTransformStyle,
+  filterStickersByTarget,
+  sanitizeStickerCategory,
+} from "../src/composables/useStickers.js";
 
 test("Left Sidebar partitions pinned vs regular projects, orders by sidebar_order, and filters archived", () => {
   const sampleProjects = [
@@ -735,5 +740,31 @@ test("Study Pomodoro interval cycling and markdown auto-log bullet generation", 
   const bullet = formatStudyLogMarkdown("Neuroscience", 25, "Read chapter 3", "Slides");
   assert.equal(bullet, "- [x] 🍅 Focus (25m) on [[Neuroscience]] (Slides): Read chapter 3");
 });
+
+test("Sticker placement filters by date/note and computes CSS transform styling", () => {
+  const placements = [
+    { id: 1, target_type: "calendar_date", target_key: "2026-11-04", sticker_name: "Coffee", pos_x: 70, pos_y: 30, rotation_deg: 10, scale: 120 },
+    { id: 2, target_type: "calendar_date", target_key: "2026-11-05", sticker_name: "Star", pos_x: 50, pos_y: 50, rotation_deg: 0, scale: 100 },
+    { id: 3, target_type: "note", target_key: "note-101", sticker_name: "Trophy", pos_x: 80, pos_y: 20, rotation_deg: -15, scale: 90 },
+  ];
+
+  const dateMatches = filterStickersByTarget(placements, "calendar_date", "2026-11-04");
+  assert.equal(dateMatches.length, 1);
+  assert.equal(dateMatches[0].sticker_name, "Coffee");
+
+  const noteMatches = filterStickersByTarget(placements, "note", "note-101");
+  assert.equal(noteMatches.length, 1);
+  assert.equal(noteMatches[0].sticker_name, "Trophy");
+
+  const style = computeStickerTransformStyle(dateMatches[0]);
+  assert.equal(style.left, "70%");
+  assert.equal(style.top, "30%");
+  assert.ok(style.transform.includes("rotate(10deg)"));
+  assert.ok(style.transform.includes("scale(1.2)"));
+
+  assert.equal(sanitizeStickerCategory("achievement"), "achievement");
+  assert.equal(sanitizeStickerCategory("UNKNOWN_CAT"), "custom");
+});
+
 
 

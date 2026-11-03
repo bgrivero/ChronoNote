@@ -20,6 +20,8 @@ from backend.models import (
     Note,
     NoteLink,
     Project,
+    Sticker,
+    StickerPlacement,
     StudySession,
     Task,
     User,
@@ -64,6 +66,11 @@ from backend.schemas import (
     SearchResultItem,
     SidebarProjectItem,
     SidebarReorderRequest,
+    StickerCreate,
+    StickerOut,
+    StickerPlacementCreate,
+    StickerPlacementOut,
+    StickerPlacementUpdate,
     StudySessionCreate,
     StudySessionOut,
     StudyStatsOut,
@@ -911,6 +918,31 @@ def get_current_authenticated_user(
     if not user:
         raise HTTPException(status_code=401, detail="User account not found")
     return UserOut.model_validate(user)
+
+
+@app.get("/api/auth/mcp-code")
+def get_mcp_connection_code(
+    user: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    """Generate a temporary 6-digit connection code for connecting Claude/MCP."""
+    if not user:
+        # If running in local single-user mode or first user
+        fallback_user = db.query(User).order_by(User.id.asc()).first()
+        if not fallback_user:
+            raise HTTPException(status_code=401, detail="Please log in to ChronoNote first to generate an MCP code.")
+        user = fallback_user
+
+    from backend.services.mcp_auth import generate_mcp_code
+    code = generate_mcp_code(user.id, user.email, user.name)
+    return {
+        "success": True,
+        "code": code,
+        "email": user.email,
+        "name": user.name,
+        "expires_in_seconds": 900,
+        "instructions": f"In Claude, tell it: Connect to ChronoNote with code {code}",
+    }
 
 
 @app.post("/api/user/reset")
@@ -2452,6 +2484,222 @@ def delete_study_session(
     db.delete(session)
     db.commit()
     return {"message": "Study session deleted successfully", "id": session_id}
+
+
+# ---------------------------------------------------------------------------
+# Custom Stickers & Placements (Calendar & Notes)
+# ---------------------------------------------------------------------------
+
+PRESET_STICKERS = [
+    {
+        "name": "Coffee Cup",
+        "category": "lifestyle",
+        "image_url": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='46' fill='%23fef3c7' stroke='%23d97706' stroke-width='4'/><text x='50' y='64' font-size='46' text-anchor='middle'>☕</text></svg>",
+    },
+    {
+        "name": "Gold Star",
+        "category": "achievement",
+        "image_url": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='46' fill='%23fef9c3' stroke='%23eab308' stroke-width='4'/><text x='50' y='64' font-size='46' text-anchor='middle'>⭐</text></svg>",
+    },
+    {
+        "name": "Study Books",
+        "category": "study",
+        "image_url": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='46' fill='%23e0e7ff' stroke='%236366f1' stroke-width='4'/><text x='50' y='64' font-size='46' text-anchor='middle'>📚</text></svg>",
+    },
+    {
+        "name": "Deep Focus",
+        "category": "study",
+        "image_url": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='46' fill='%23fee2e2' stroke='%23ef4444' stroke-width='4'/><text x='50' y='64' font-size='46' text-anchor='middle'>🍅</text></svg>",
+    },
+    {
+        "name": "Nature Leaf",
+        "category": "lifestyle",
+        "image_url": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='46' fill='%23dcfce7' stroke='%2316a34a' stroke-width='4'/><text x='50' y='64' font-size='46' text-anchor='middle'>🌿</text></svg>",
+    },
+    {
+        "name": "Milestone Trophy",
+        "category": "achievement",
+        "image_url": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='46' fill='%23ffedd5' stroke='%23ea580c' stroke-width='4'/><text x='50' y='64' font-size='46' text-anchor='middle'>🏆</text></svg>",
+    },
+    {
+        "name": "Inspiration Light",
+        "category": "study",
+        "image_url": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='46' fill='%23fef08a' stroke='%23ca8a04' stroke-width='4'/><text x='50' y='64' font-size='46' text-anchor='middle'>💡</text></svg>",
+    },
+    {
+        "name": "Target Goal",
+        "category": "achievement",
+        "image_url": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='46' fill='%23fce7f3' stroke='%23db2777' stroke-width='4'/><text x='50' y='64' font-size='46' text-anchor='middle'>🎯</text></svg>",
+    },
+]
+
+
+def _ensure_default_stickers(db: Session, user: User | None) -> list[Sticker]:
+    q = db.query(Sticker)
+    if user:
+        q = q.filter(Sticker.user_id == user.id)
+    else:
+        q = q.filter(Sticker.user_id.is_(None))
+    existing = q.all()
+    if existing:
+        return existing
+
+    created = []
+    for s_info in PRESET_STICKERS:
+        stk = Sticker(
+            user_id=user.id if user else None,
+            name=s_info["name"],
+            category=s_info["category"],
+            image_url=s_info["image_url"],
+        )
+        db.add(stk)
+        created.append(stk)
+    db.commit()
+    for stk in created:
+        db.refresh(stk)
+    return created
+
+
+@app.get("/api/stickers", response_model=list[StickerOut])
+def list_stickers(
+    category: str | None = Query(default=None),
+    user: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    stickers = _ensure_default_stickers(db, user)
+    if category:
+        stickers = [s for s in stickers if s.category == category]
+    return stickers
+
+
+@app.post("/api/stickers", response_model=StickerOut, status_code=201)
+def upload_sticker(
+    payload: StickerCreate,
+    user: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    stk = Sticker(
+        user_id=user.id if user else None,
+        name=payload.name.strip(),
+        category=payload.category.strip() or "custom",
+        image_url=payload.image_url.strip(),
+    )
+    db.add(stk)
+    db.commit()
+    db.refresh(stk)
+    return stk
+
+
+@app.delete("/api/stickers/{sticker_id}")
+def delete_sticker(
+    sticker_id: int,
+    user: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    q = db.query(Sticker).filter(Sticker.id == sticker_id)
+    if user:
+        q = q.filter(Sticker.user_id == user.id)
+    else:
+        q = q.filter(Sticker.user_id.is_(None))
+    stk = q.first()
+    if not stk:
+        raise HTTPException(status_code=404, detail="Sticker not found")
+    db.delete(stk)
+    db.commit()
+    return {"message": "Sticker deleted successfully", "id": sticker_id}
+
+
+@app.get("/api/stickers/placements", response_model=list[StickerPlacementOut])
+def list_sticker_placements(
+    target_type: str | None = Query(default=None),
+    target_key: str | None = Query(default=None),
+    user: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    q = db.query(StickerPlacement)
+    if user:
+        q = q.filter(StickerPlacement.user_id == user.id)
+    else:
+        q = q.filter(StickerPlacement.user_id.is_(None))
+    if target_type:
+        q = q.filter(StickerPlacement.target_type == target_type)
+    if target_key:
+        q = q.filter(StickerPlacement.target_key == target_key)
+    return q.order_by(StickerPlacement.created_at.asc()).all()
+
+
+@app.post("/api/stickers/placements", response_model=StickerPlacementOut, status_code=201)
+def create_sticker_placement(
+    payload: StickerPlacementCreate,
+    user: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    placement = StickerPlacement(
+        user_id=user.id if user else None,
+        sticker_id=payload.sticker_id,
+        sticker_name=payload.sticker_name,
+        image_url=payload.image_url,
+        target_type=payload.target_type,
+        target_key=payload.target_key,
+        pos_x=payload.pos_x,
+        pos_y=payload.pos_y,
+        rotation_deg=payload.rotation_deg,
+        scale=payload.scale,
+    )
+    db.add(placement)
+    db.commit()
+    db.refresh(placement)
+    return placement
+
+
+@app.patch("/api/stickers/placements/{placement_id}", response_model=StickerPlacementOut)
+def update_sticker_placement(
+    placement_id: int,
+    payload: StickerPlacementUpdate,
+    user: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    q = db.query(StickerPlacement).filter(StickerPlacement.id == placement_id)
+    if user:
+        q = q.filter(StickerPlacement.user_id == user.id)
+    else:
+        q = q.filter(StickerPlacement.user_id.is_(None))
+    placement = q.first()
+    if not placement:
+        raise HTTPException(status_code=404, detail="Sticker placement not found")
+
+    if payload.pos_x is not None:
+        placement.pos_x = payload.pos_x
+    if payload.pos_y is not None:
+        placement.pos_y = payload.pos_y
+    if payload.rotation_deg is not None:
+        placement.rotation_deg = payload.rotation_deg
+    if payload.scale is not None:
+        placement.scale = payload.scale
+
+    db.commit()
+    db.refresh(placement)
+    return placement
+
+
+@app.delete("/api/stickers/placements/{placement_id}")
+def delete_sticker_placement(
+    placement_id: int,
+    user: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    q = db.query(StickerPlacement).filter(StickerPlacement.id == placement_id)
+    if user:
+        q = q.filter(StickerPlacement.user_id == user.id)
+    else:
+        q = q.filter(StickerPlacement.user_id.is_(None))
+    placement = q.first()
+    if not placement:
+        raise HTTPException(status_code=404, detail="Sticker placement not found")
+    db.delete(placement)
+    db.commit()
+    return {"message": "Sticker placement removed", "id": placement_id}
+
 
 
 
