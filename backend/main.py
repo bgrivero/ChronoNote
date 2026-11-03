@@ -924,16 +924,24 @@ def get_current_authenticated_user(
 
 @app.get("/api/auth/mcp-code")
 def get_mcp_connection_code(
+    token: str | None = Query(default=None),
     user: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
-    """Generate a temporary 6-digit connection code for connecting Claude/MCP."""
+    """Generate a temporary 6-digit connection code strictly for the authenticated user."""
+    if not user and token:
+        claims = verify_session_token(token.strip())
+        if claims and claims.get("sub"):
+            try:
+                user = db.query(User).filter(User.id == int(claims["sub"])).first()
+            except Exception:
+                pass
+
     if not user:
-        # If running in local single-user mode or first user
-        fallback_user = db.query(User).order_by(User.id.asc()).first()
-        if not fallback_user:
-            raise HTTPException(status_code=401, detail="Please log in to ChronoNote first to generate an MCP code.")
-        user = fallback_user
+        raise HTTPException(
+            status_code=401,
+            detail="You must be logged in to ChronoNote to generate an MCP connection code. Please log in first.",
+        )
 
     from backend.services.mcp_auth import generate_mcp_code
     code = generate_mcp_code(user.id, user.email, user.name)

@@ -273,6 +273,46 @@ const authToken = ref("");
 const googleClientId = ref(ENV_GOOGLE_CLIENT_ID);
 const authRequired = ref(false);
 const showAuthModal = ref(false);
+const showMcpModal = ref(false);
+const mcpCodeLoading = ref(false);
+const mcpCodeError = ref("");
+const mcpConnectData = ref(null);
+const mcpCopied = ref(false);
+
+async function openMcpConnectModal() {
+  showMcpModal.value = true;
+  mcpCodeLoading.value = true;
+  mcpCodeError.value = "";
+  mcpCopied.value = false;
+  try {
+    const res = await fetch(`${API_BASE}/auth/mcp-code`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Failed to generate connection code");
+    }
+    mcpConnectData.value = await res.json();
+  } catch (err) {
+    mcpCodeError.value = err.message || "Failed to generate connection code";
+  } finally {
+    mcpCodeLoading.value = false;
+  }
+}
+
+async function copyMcpCode() {
+  if (!mcpConnectData.value?.code) return;
+  try {
+    await navigator.clipboard.writeText(mcpConnectData.value.code);
+    mcpCopied.value = true;
+    setTimeout(() => {
+      mcpCopied.value = false;
+    }, 2500);
+  } catch {
+    // fallback
+  }
+}
+
 const authEmailInput = ref("");
 const authNameInput = ref("");
 const authError = ref("");
@@ -3110,6 +3150,14 @@ onMounted(async () => {
             {{ (currentUser.name || currentUser.email || "U").charAt(0).toUpperCase() }}
           </span>
           <span class="user-name-label">{{ currentUser.name || currentUser.email }}</span>
+          <button
+            type="button"
+            class="mcp-connect-pill-btn"
+            title="Connect Claude via MCP"
+            @click="openMcpConnectModal"
+          >
+            🔌 Connect Claude
+          </button>
           <button
             type="button"
             class="signout-link-btn"
