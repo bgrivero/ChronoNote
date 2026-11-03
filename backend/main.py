@@ -43,6 +43,8 @@ from backend.schemas import (
     HabitOut,
     HabitToggleRequest,
     HabitUpdate,
+    ImageUploadRequest,
+    ImageUploadResponse,
     JournalLockStatusOut,
     JournalSetPasswordRequest,
     JournalUnlockRequest,
@@ -2699,6 +2701,58 @@ def delete_sticker_placement(
     db.delete(placement)
     db.commit()
     return {"message": "Sticker placement removed", "id": placement_id}
+
+
+# ---------------------------------------------------------------------------
+# Docs-Style Uploadable Images Engine (Inline, Wrap, Above Text / Draggable)
+# ---------------------------------------------------------------------------
+
+UPLOADS_DIR = Path(__file__).resolve().parent.parent / "uploads"
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@app.post("/api/uploads/images", response_model=ImageUploadResponse)
+def upload_journal_image(
+    payload: ImageUploadRequest,
+    user: User | None = Depends(get_optional_user),
+):
+    """Save an image uploaded for notes/journal and return its URL and layout mode."""
+    clean_filename = re.sub(r"[^a-zA-Z0-9_\.-]", "_", payload.filename) or "image.png"
+    timestamp_prefix = datetime.now().strftime("%Y%m%d_%H%M%S")
+    stored_filename = f"{timestamp_prefix}_{clean_filename}"
+    file_path = UPLOADS_DIR / stored_filename
+
+    raw_data = payload.image_data.strip()
+    if raw_data.startswith("data:") and ";base64," in raw_data:
+        _, b64_str = raw_data.split(";base64,", 1)
+        import base64
+        try:
+            file_bytes = base64.b64decode(b64_str)
+            file_path.write_bytes(file_bytes)
+            url = f"/api/uploads/images/{stored_filename}"
+        except Exception:
+            url = raw_data
+    else:
+        url = raw_data
+
+    return ImageUploadResponse(
+        url=url,
+        filename=payload.filename,
+        mode=payload.mode or "inline",
+        pos_x=50,
+        pos_y=20,
+        width=320,
+    )
+
+
+@app.get("/api/uploads/images/{filename}")
+def serve_uploaded_image(filename: str):
+    clean_filename = Path(filename).name
+    target = UPLOADS_DIR / clean_filename
+    if not target.exists() or not target.is_file():
+        raise HTTPException(status_code=404, detail="Image not found")
+    return FileResponse(path=str(target))
+
 
 
 

@@ -549,3 +549,20 @@ class StickerPlacementOut(BaseModel):
     created_at: datetime
 
 
+class ImageUploadRequest(BaseModel):
+    filename: str
+    image_data: str  # data URI or base64
+    mode: str = "inline"  # inline, wrap_left, wrap_right, draggable
+
+
+class ImageUploadResponse(BaseModel):
+    url: str
+    filename: str
+    mode: str = "inline"
+    pos_x: int | None = 50
+    pos_y: int | None = 20
+    width: int | None = 320
+    height: int | None = None
+
+
+
