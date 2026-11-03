@@ -6,6 +6,8 @@ import HabitHeatmapView from "./HabitHeatmapView.vue";
 import StudyModeView from "./StudyModeView.vue";
 import StickerTrayDrawer from "./StickerTrayDrawer.vue";
 import DocsImageOverlay from "./DocsImageOverlay.vue";
+import AccountSettingsModal from "./AccountSettingsModal.vue";
+import JournalDraggablesOverlay from "./JournalDraggablesOverlay.vue";
 import { filterStickersByTarget, readFileAsDataUrl } from "../composables/useStickers.js";
 import { parseDocsImageDirectives, formatDocsImageMarkdown } from "../composables/useDocsImages.js";
 import {
@@ -1639,6 +1641,29 @@ function handleStudyNoteUpdated(updatedNote) {
 const stickersList = ref([]);
 const stickerPlacements = ref([]);
 const isStickerDrawerOpen = ref(false);
+const isUserDropdownOpen = ref(false);
+const showAccountSettingsModal = ref(false);
+const userDropdownRef = ref(null);
+
+function handleDocumentClick(e) {
+  if (userDropdownRef.value && !userDropdownRef.value.contains(e.target)) {
+    isUserDropdownOpen.value = false;
+  }
+}
+
+function handleUserUpdated(sessionData) {
+  if (sessionData && sessionData.user) {
+    currentUser.value = sessionData.user;
+    if (sessionData.token) {
+      sessionToken.value = sessionData.token;
+      localStorage.setItem("chrononote_session_token", sessionData.token);
+    }
+    showNotification({
+      type: "success",
+      message: "Account settings updated successfully",
+    });
+  }
+}
 const activeStickerTarget = ref({ type: "calendar_date", key: "2026-11-01" });
 
 async function fetchStickers() {
@@ -1750,6 +1775,38 @@ function getStickersForDate(isoDate) {
 
 function getStickersForNote(noteKey) {
   return filterStickersByTarget(stickerPlacements.value, "note", noteKey);
+}
+
+const journalStickers = computed(() => {
+  const dateKey = selectedJournalDate.value;
+  const noteKey = activeNote.value?.id;
+  return stickerPlacements.value.filter(
+    (p) =>
+      p.target_key === dateKey ||
+      (noteKey && String(p.target_key) === String(noteKey)) ||
+      (p.target_type === "calendar_date" && p.target_key === dateKey) ||
+      (p.target_type === "journal" && p.target_key === dateKey)
+  );
+});
+
+async function handleUpdateStickerPlacement(payload) {
+  const { id, pos_x, pos_y, rotation_deg, scale } = payload;
+  const existing = stickerPlacements.value.find((p) => p.id === id);
+  if (existing) {
+    if (pos_x !== undefined) existing.pos_x = pos_x;
+    if (pos_y !== undefined) existing.pos_y = pos_y;
+    if (rotation_deg !== undefined) existing.rotation_deg = rotation_deg;
+    if (scale !== undefined) existing.scale = scale;
+  }
+  try {
+    await fetch(`${API_BASE}/stickers/placements/${id}`, {
+      method: "PATCH",
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ pos_x, pos_y, rotation_deg, scale }),
+    });
+  } catch (err) {
+    console.error("Failed to update sticker placement:", err);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2957,6 +3014,7 @@ async function saveNote() {
 }
 
 onMounted(async () => {
+  document.addEventListener("click", handleDocumentClick);
   loadSavedAuthSession();
   loadLocalJournals();
   loadLocalProjectsAndTasks();
@@ -3043,7 +3101,7 @@ onMounted(async () => {
             v-if="habitAnalytics.overall_stats && habitAnalytics.overall_stats.best_current_streak"
             class="tab-count fire-tab-badge"
           >
-            🔥 {{ habitAnalytics.overall_stats.best_current_streak }}d
+            {{ habitAnalytics.overall_stats.best_current_streak }}d
           </span>
         </button>
         <button
@@ -3056,159 +3114,207 @@ onMounted(async () => {
           "
         >
           Study &amp; Pomodoro
-          <span class="tab-count study-badge-count">🍅 Focus</span>
+          <span class="tab-count study-badge-count">Focus</span>
         </button>
       </nav>
 
       <div class="topbar-right">
-        <!-- Journal Security Pill -->
-        <button
-          type="button"
-          class="btn-editorial-ghost journal-lock-pill-btn"
-          :class="{ 'is-locked': hasJournalPassword && !isJournalUnlocked }"
-          :title="
-            hasJournalPassword
-              ? (isJournalUnlocked
-                  ? 'Journal is unlocked for this session. Click to lock now or change password.'
-                  : 'Journal is locked. Click to enter password.')
-              : 'Set a password to protect your journal notes.'
-          "
-          @click="
-            hasJournalPassword && !isJournalUnlocked
-              ? (showJournalUnlockModal = true)
-              : (showJournalSettingsModal = true)
-          "
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <template v-if="hasJournalPassword && !isJournalUnlocked">
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-            </template>
-            <template v-else>
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-              <path d="M7 11V7a5 5 0 0 1 9.9-1" />
-            </template>
-          </svg>
-          <span v-if="!hasJournalPassword">Protect Journal</span>
-          <span v-else-if="!isJournalUnlocked">Journal Locked</span>
-          <span v-else>Journal Unlocked</span>
-        </button>
-
-        <button
-          type="button"
-          class="btn-editorial-ghost hide-on-mobile"
-          @click="openDailyJournalForDate(selectedJournalDate, true)"
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-            <path d="M12 20h9" />
-            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-          </svg>
-          <span>Today’s Journal</span>
-        </button>
-
-        <!-- Stickers Drawer Toggle Button -->
-        <button
-          type="button"
-          class="btn-editorial-ghost hide-on-mobile sticker-toggle-btn"
-          :class="{ active: isStickerDrawerOpen }"
-          title="Aesthetic Stickers & Stamps Palette"
-          @click="
-            activeStickerTarget = {
-              type: activePage === 'journal' ? 'note' : 'calendar_date',
-              key: activePage === 'journal' ? (activeNote?.id || selectedJournalDate) : selectedJournalDate
-            };
-            isStickerDrawerOpen = !isStickerDrawerOpen;
-            if (isStickerDrawerOpen) {
-              fetchStickers();
-              fetchStickerPlacements();
-            }
-          "
-        >
-          <span>🌸 Stickers</span>
-          <span v-if="stickerPlacements.length" class="tab-count">{{ stickerPlacements.length }}</span>
-        </button>
-
-        <!-- Theme Customizer Toggle Button -->
-        <button
-          type="button"
-          class="btn-editorial-ghost hide-on-mobile theme-toggle-btn"
-          title="Customize Paper Texture, Fonts & Appearance"
-          @click="showThemeSettingsModal = true"
-        >
-          <span>🎨 Theme</span>
-        </button>
-
-        <!-- Google Account Pill / Sign-In Trigger -->
-        <div v-if="currentUser" class="user-account-pill">
-          <img
-            v-if="currentUser.picture"
-            :src="currentUser.picture"
-            :alt="currentUser.name"
-            class="user-avatar-img"
-          />
-          <span v-else class="user-avatar-monogram">
-            {{ (currentUser.name || currentUser.email || "U").charAt(0).toUpperCase() }}
-          </span>
-          <span class="user-name-label">{{ currentUser.name || currentUser.email }}</span>
+        <!-- Minimal User Dropdown (Encapsulates Account, Protect Journal, Today's Journal, Stickers, Theme, Connect Claude) -->
+        <div ref="userDropdownRef" class="user-dropdown-container">
           <button
             type="button"
-            class="mcp-connect-pill-btn"
-            title="Connect Claude via MCP"
-            @click="openMcpConnectModal"
+            class="user-dropdown-trigger"
+            :class="{ active: isUserDropdownOpen }"
+            aria-label="User account and quick navigation menu"
+            @click="isUserDropdownOpen = !isUserDropdownOpen"
           >
-            🔌 Connect Claude
+            <img
+              v-if="currentUser?.picture"
+              :src="currentUser.picture"
+              :alt="currentUser.name"
+              class="user-avatar-img"
+            />
+            <span v-else class="user-avatar-monogram">
+              {{ (currentUser?.name || currentUser?.email || "U").charAt(0).toUpperCase() }}
+            </span>
+            <span class="user-name-label">{{ currentUser?.name || currentUser?.email || "Account" }}</span>
+            <svg class="chevron-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
           </button>
-          <button
-            type="button"
-            class="signout-link-btn"
-            title="Sign out"
-            @click="signOutUser"
-          >
-            Sign out
-          </button>
+
+          <!-- Dropdown Menu Body -->
+          <div v-if="isUserDropdownOpen" class="user-menu-dropdown animate-fade-in" @click.stop>
+            <!-- User Header -->
+            <div class="user-menu-header">
+              <div class="user-menu-avatar-wrap">
+                <img
+                  v-if="currentUser?.picture"
+                  :src="currentUser.picture"
+                  :alt="currentUser.name"
+                  class="user-menu-avatar"
+                />
+                <span v-else class="user-menu-monogram">
+                  {{ (currentUser?.name || currentUser?.email || "U").charAt(0).toUpperCase() }}
+                </span>
+              </div>
+              <div class="user-menu-info">
+                <div class="user-menu-name">{{ currentUser?.name || "Local User" }}</div>
+                <div class="user-menu-email">{{ currentUser?.email || "guest@local" }}</div>
+              </div>
+            </div>
+
+            <div class="user-menu-divider" />
+
+            <!-- Account Settings Page Link -->
+            <button
+              type="button"
+              class="user-menu-item"
+              @click="isUserDropdownOpen = false; showAccountSettingsModal = true"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+              <span class="user-menu-item-text">Account Settings</span>
+            </button>
+
+            <!-- Today's Journal -->
+            <button
+              type="button"
+              class="user-menu-item"
+              @click="isUserDropdownOpen = false; openDailyJournalForDate(selectedJournalDate, true)"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+              </svg>
+              <span class="user-menu-item-text">Today’s Journal</span>
+            </button>
+
+            <!-- Protect Journal -->
+            <button
+              type="button"
+              class="user-menu-item"
+              @click="
+                isUserDropdownOpen = false;
+                hasJournalPassword && !isJournalUnlocked
+                  ? (showJournalUnlockModal = true)
+                  : (showJournalSettingsModal = true);
+              "
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path v-if="hasJournalPassword && !isJournalUnlocked" d="M7 11V7a5 5 0 0 1 10 0v4" />
+                <path v-else d="M7 11V7a5 5 0 0 1 9.9-1" />
+              </svg>
+              <span class="user-menu-item-text">
+                {{ !hasJournalPassword ? "Protect Journal" : (!isJournalUnlocked ? "Unlock Journal" : "Journal Security") }}
+              </span>
+              <span class="menu-item-pill" :class="{ 'is-active': isJournalUnlocked }">
+                {{ !hasJournalPassword ? "Disabled" : (!isJournalUnlocked ? "Locked" : "Unlocked") }}
+              </span>
+            </button>
+
+            <!-- Stickers & Stamps -->
+            <button
+              type="button"
+              class="user-menu-item"
+              @click="
+                isUserDropdownOpen = false;
+                activeStickerTarget = {
+                  type: 'calendar_date',
+                  key: selectedJournalDate
+                };
+                isStickerDrawerOpen = true;
+                fetchStickers();
+                fetchStickerPlacements();
+              "
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+                <line x1="9" y1="9" x2="9.01" y2="9" />
+                <line x1="15" y1="9" x2="15.01" y2="9" />
+              </svg>
+              <span class="user-menu-item-text">Stickers</span>
+              <span v-if="stickerPlacements.length" class="menu-item-pill">{{ stickerPlacements.length }}</span>
+            </button>
+
+            <!-- Theme Settings -->
+            <button
+              type="button"
+              class="user-menu-item"
+              @click="isUserDropdownOpen = false; showThemeSettingsModal = true"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <circle cx="13.5" cy="6.5" r=".5" />
+                <circle cx="17.5" cy="10.5" r=".5" />
+                <circle cx="8.5" cy="7.5" r=".5" />
+                <circle cx="6.5" cy="12.5" r=".5" />
+                <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z" />
+              </svg>
+              <span class="user-menu-item-text">Theme</span>
+            </button>
+
+            <!-- Connect Claude -->
+            <button
+              type="button"
+              class="user-menu-item"
+              @click="isUserDropdownOpen = false; openMcpConnectModal()"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+              </svg>
+              <span class="user-menu-item-text">Connect Claude</span>
+            </button>
+
+            <div class="user-menu-divider" />
+
+            <!-- Reset Workspace Data -->
+            <button
+              type="button"
+              class="user-menu-item item-danger"
+              @click="isUserDropdownOpen = false; openResetModal()"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              </svg>
+              <span class="user-menu-item-text">Reset Workspace</span>
+            </button>
+
+            <!-- Sign Out / Sign In -->
+            <button
+              v-if="currentUser"
+              type="button"
+              class="user-menu-item item-signout"
+              @click="isUserDropdownOpen = false; signOutUser()"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+              <span class="user-menu-item-text">Sign Out</span>
+            </button>
+            <button
+              v-else
+              type="button"
+              class="user-menu-item item-signin"
+              @click="isUserDropdownOpen = false; showAuthModal = true"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                <polyline points="10 17 15 12 10 7" />
+                <line x1="15" y1="12" x2="3" y2="12" />
+              </svg>
+              <span class="user-menu-item-text">Sign In</span>
+            </button>
+          </div>
         </div>
-
-        <button
-          v-else
-          type="button"
-          class="btn-google-signin"
-          @click="showAuthModal = true"
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              fill="#EA4335"
-              d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.4 1 3.5 3.6 1.6 7.4l3.7 2.8C6.2 7.2 8.9 5 12 5z"
-            />
-            <path
-              fill="#4285F4"
-              d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.6l3.7 2.9c2.2-2 3.7-5 3.7-8.7z"
-            />
-            <path
-              fill="#FBBC05"
-              d="M5.3 14.8c-.2-.8-.4-1.6-.4-2.5s.2-1.7.4-2.5L1.6 7C.6 9 0 11.2 0 13.5s.6 4.5 1.6 6.5l3.7-2.9z"
-            />
-            <path
-              fill="#34A853"
-              d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3.1 0-5.8-2.1-6.7-5l-3.7 2.8C3.5 19.9 7.4 23 12 23z"
-            />
-          </svg>
-          <span>Sign in</span>
-        </button>
-
-        <button
-          type="button"
-          class="btn-editorial-ghost btn-reset-trigger hide-on-mobile"
-          title="Reset Workspace & Delete All Data"
-          @click="openResetModal"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="3 6 5 6 21 6" />
-            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-          </svg>
-          <span>Reset Data</span>
-        </button>
       </div>
-    </header>
+</header>
 
     <!-- =====================================================================
          PAGE 1: PROJECTS KANBAN BOARD
@@ -3467,7 +3573,7 @@ onMounted(async () => {
                     "
                     @click="toggleProjectSubtasksVisibility(proj.id)"
                   >
-                    {{ isProjectSubtasksVisible(proj.id) ? '👁️ Subtasks On' : '👁️‍🗨️ Subtasks' }}
+                    {{ isProjectSubtasksVisible(proj.id) ? 'Subtasks On' : 'Subtasks' }}
                   </button>
                   <button
                     type="button"
@@ -3829,15 +3935,6 @@ onMounted(async () => {
         </div>
 
         <div class="journal-paper-body">
-          <!-- Draggable / Floating Images Layer (Docs style) -->
-          <DocsImageOverlay
-            v-if="journalFloatingImages.length"
-            :images="journalFloatingImages"
-            @update-image="handleUpdateFloatingImage"
-            @change-mode="handleChangeFloatingImageMode"
-            @delete-image="handleDeleteFloatingImage"
-          />
-
           <!-- 1. Rendered Markdown View (Default) -->
           <div
             v-if="!isEditingJournal"
@@ -3850,6 +3947,16 @@ onMounted(async () => {
             title="Click to write or edit markdown"
             @click="startEditingJournal(false)"
           >
+            <!-- Draggable & Resizable Images & Stickers Overlay (Docs style) -->
+            <JournalDraggablesOverlay
+              :images="journalFloatingImages"
+              :stickers="journalStickers"
+              @update-image="handleUpdateFloatingImage"
+              @change-image-mode="handleChangeFloatingImageMode"
+              @delete-image="handleDeleteFloatingImage"
+              @update-sticker="handleUpdateStickerPlacement"
+              @delete-sticker="handleRemovePlacement"
+            />
             <div
               v-if="journalDraftMd && journalDraftMd.trim()"
               class="journal-rendered-prose"
@@ -4112,7 +4219,7 @@ onMounted(async () => {
                   "
                   @click="toggleProjectSubtasksVisibility(proj.id)"
                 >
-                  {{ isProjectSubtasksVisible(proj.id) ? '👁️ Subtasks On' : '👁️‍🗨️ Subtasks' }}
+                  {{ isProjectSubtasksVisible(proj.id) ? 'Subtasks On' : 'Subtasks' }}
                 </button>
                 <button
                   type="button"
@@ -5416,6 +5523,16 @@ onMounted(async () => {
             title="Click to write or edit markdown"
             @click="startEditingJournal(true)"
           >
+            <!-- Draggable & Resizable Images & Stickers Overlay inside Drawer -->
+            <JournalDraggablesOverlay
+              :images="journalFloatingImages"
+              :stickers="journalStickers"
+              @update-image="handleUpdateFloatingImage"
+              @change-image-mode="handleChangeFloatingImageMode"
+              @delete-image="handleDeleteFloatingImage"
+              @update-sticker="handleUpdateStickerPlacement"
+              @delete-sticker="handleRemovePlacement"
+            />
             <div
               v-if="journalDraftMd && journalDraftMd.trim()"
               class="journal-rendered-prose"
@@ -5504,7 +5621,7 @@ onMounted(async () => {
               title="Delete this project"
               @click="deleteProject(selectedProject.id)"
             >
-              🗑️ Delete
+              Delete
             </button>
             <button
               type="button"
@@ -6720,6 +6837,16 @@ onMounted(async () => {
     <!-- =====================================================================
          STICKER & STAMP PALETTE DRAWER
          ===================================================================== -->
+    <!-- Account Settings Modal -->
+    <AccountSettingsModal
+      v-if="showAccountSettingsModal"
+      :current-user="currentUser"
+      :api-base="API_BASE"
+      :get-auth-headers="getAuthHeaders"
+      @close="showAccountSettingsModal = false"
+      @user-updated="handleUserUpdated"
+    />
+
     <StickerTrayDrawer
       :is-open="isStickerDrawerOpen"
       :stickers="stickersList"

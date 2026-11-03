@@ -22,8 +22,12 @@
           :title="isMuted ? 'Unmute Bell' : 'Mute Bell'"
           @click="isMuted = !isMuted"
         >
-          <span v-if="isMuted">🔇 Muted</span>
-          <span v-else>🔔 Bell On</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path v-if="isMuted" d="M13.73 21a2 2 0 0 1-3.46 0M18.63 13A17.89 17.89 0 0 1 18 8M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14M1 1l22 22" />
+            <path v-else d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0" />
+          </svg>
+          <span v-if="isMuted">Muted</span>
+          <span v-else>Bell On</span>
         </button>
 
         <!-- Ambient Noise (Synthesized Offline) -->
@@ -33,7 +37,11 @@
           :class="{ active: isAmbientPlaying }"
           @click="toggleAmbientNoise"
         >
-          <span>{{ isAmbientPlaying ? '🌧️ Ambient Rain Playing' : '🎧 Play Soft Rain' }}</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M3 18v-6a9 9 0 0 1 18 0v6" />
+            <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" />
+          </svg>
+          <span>{{ isAmbientPlaying ? 'Ambient Rain Playing' : 'Play Soft Rain' }}</span>
         </button>
 
         <!-- Zen Fullscreen Toggle -->
@@ -42,7 +50,11 @@
           class="btn-editorial-subtle"
           @click="isFullscreen = !isFullscreen"
         >
-          <span>{{ isFullscreen ? '⤢ Exit Zen Fullscreen' : '⛶ Zen Fullscreen' }}</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <polyline v-if="isFullscreen" points="4 14 10 14 10 20M20 10 14 10 14 4M14 10 21 3M3 21 10 14" />
+            <polyline v-else points="15 3 21 3 21 9M9 21 3 21 3 15M21 3 14 10M3 21 10 14" />
+          </svg>
+          <span>{{ isFullscreen ? 'Exit Zen Fullscreen' : 'Zen Fullscreen' }}</span>
         </button>
       </div>
     </header>
@@ -59,7 +71,7 @@
             class="setup-select"
             @change="onProjectChange"
           >
-            <option :value="null">🌿 General Study / Uncategorized</option>
+            <option :value="null">General Study / Uncategorized</option>
             <option
               v-for="p in projects"
               :key="p.id"
@@ -99,7 +111,7 @@
             class="setup-select"
             @change="onNoteChange"
           >
-            <option :value="null">📝 Free Scratchpad</option>
+            <option :value="null">Free Scratchpad</option>
             <option
               v-for="n in projectNotes"
               :key="n.id"
@@ -143,7 +155,10 @@
       <section class="study-note-pane">
         <div class="note-pane-header">
           <div class="note-title-badge">
-            <span class="badge-icon">📖</span>
+            <svg class="badge-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+            </svg>
             <span class="badge-text">{{ activeNoteTitle }}</span>
           </div>
 
@@ -168,7 +183,7 @@
               :disabled="isSavingNote"
               @click="saveCurrentStudyNote"
             >
-              {{ isSavingNote ? 'Saving…' : '💾 Save Note' }}
+              {{ isSavingNote ? 'Saving…' : 'Save Note' }}
             </button>
           </div>
         </div>
@@ -193,7 +208,7 @@
             :class="{ active: activeMode === 'focus' }"
             @click="switchMode('focus')"
           >
-            🍅 Focus ({{ focusDurationMin }}m)
+            Focus ({{ focusDurationMin }}m)
           </button>
           <button
             type="button"
@@ -201,7 +216,7 @@
             :class="{ active: activeMode === 'short_break' }"
             @click="switchMode('short_break')"
           >
-            ☕ Short Break ({{ shortBreakDurationMin }}m)
+            Short Break ({{ shortBreakDurationMin }}m)
           </button>
           <button
             type="button"
@@ -209,7 +224,7 @@
             :class="{ active: activeMode === 'long_break' }"
             @click="switchMode('long_break')"
           >
-            🛋️ Long Break ({{ longBreakDurationMin }}m)
+            Long Break ({{ longBreakDurationMin }}m)
           </button>
         </div>
 
@@ -304,7 +319,7 @@
             <span class="kpi-mini-lbl">Pomodoros Done</span>
           </div>
           <div class="kpi-mini-card">
-            <span class="kpi-mini-val">🔥 {{ stats.current_streak_days || 0 }}d</span>
+            <span class="kpi-mini-val">{{ stats.current_streak_days || 0 }}d</span>
             <span class="kpi-mini-lbl">Study Streak</span>
           </div>
         </div>
@@ -387,11 +402,11 @@ const scratchpadStorageKey = "chrononote_study_scratchpad";
 
 // Quick Intention suggestions
 const quickIntentions = [
-  "📖 Chapter Reading",
-  "💻 Code Practice",
-  "✍️ Spec Drafting",
-  "🔍 Problem Solving",
-  "🧠 Flashcards / Review",
+  "Chapter Reading",
+  "Code Practice",
+  "Spec Drafting",
+  "Problem Solving",
+  "Flashcards / Review",
 ];
 
 // Stats
@@ -708,7 +723,7 @@ async function recordCompletedSession() {
       emit("session-completed", created);
       emit("notify", {
         type: "success",
-        message: `🍅 Completed ${duration}m Focus Session on ${currentProjectName.value}!`,
+        message: `Completed ${duration}m Focus Session on ${currentProjectName.value}!`,
       });
       await fetchStudyStats();
     }

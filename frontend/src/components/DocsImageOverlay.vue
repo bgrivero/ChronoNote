@@ -13,7 +13,7 @@
       <!-- Action Controls Bar (Appears on Hover/Select) -->
       <div class="image-actions-bar" @mousedown.stop @touchstart.stop>
         <span class="mode-badge" :title="`Layout: ${img.mode}`">
-          {{ img.mode === 'draggable' ? '📌 Draggable' : img.mode }}
+          {{ img.mode === 'draggable' ? 'Draggable' : img.mode }}
         </span>
         <button
           type="button"
@@ -21,7 +21,7 @@
           title="Switch to Inline text"
           @click="$emit('change-mode', { id: img.id, mode: 'inline' })"
         >
-          📄 Inline
+          Inline
         </button>
         <button
           type="button"
@@ -37,7 +37,10 @@
           title="View in Lightbox"
           @click="$emit('view-lightbox', img.url)"
         >
-          🔍
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
         </button>
         <button
           type="button"

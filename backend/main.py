@@ -27,6 +27,7 @@ from backend.models import (
     User,
 )
 from backend.schemas import (
+    AccountProfileUpdateRequest,
     AuthConfigOut,
     AuthLoginRequest,
     AuthRegisterRequest,
@@ -920,6 +921,104 @@ def get_current_authenticated_user(
     if not user:
         raise HTTPException(status_code=401, detail="User account not found")
     return UserOut.model_validate(user)
+
+
+SPECIAL_PASSWORD_CHARS = set("!@#$%^&*()_+-=[]{};':\",.<>/?~`|\\")
+
+
+def validate_strict_password(password: str) -> None:
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters long")
+    if len(password) > 128:
+        raise HTTPException(status_code=400, detail="Password cannot exceed 128 characters")
+    if not re.search(r"[A-Z]", password):
+        raise HTTPException(status_code=400, detail="Password must contain at least one uppercase letter (A-Z)")
+    if not re.search(r"[a-z]", password):
+        raise HTTPException(status_code=400, detail="Password must contain at least one lowercase letter (a-z)")
+    if not re.search(r"\d", password):
+        raise HTTPException(status_code=400, detail="Password must contain at least one numeric digit (0-9)")
+    if not any(c in SPECIAL_PASSWORD_CHARS for c in password):
+        raise HTTPException(status_code=400, detail="Password must contain at least one special character (!@#$%^&*...)")
+
+
+@app.patch("/api/auth/profile", response_model=AuthSessionOut)
+def update_user_account_profile(
+    payload: AccountProfileUpdateRequest,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Missing Bearer session token")
+    raw_token = authorization.split(" ", 1)[1].strip()
+    claims = verify_session_token(raw_token)
+    if not claims or not claims.get("sub"):
+        raise HTTPException(status_code=401, detail="Invalid or expired session token")
+
+    try:
+        user_id = int(claims["sub"])
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Invalid token claims")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User account not found")
+
+    # 1. Update Name/Username if provided
+    if payload.name is not None:
+        clean_name = payload.name.strip()
+        if not clean_name:
+            raise HTTPException(status_code=400, detail="Username cannot be empty")
+        if len(clean_name) > 120:
+            raise HTTPException(status_code=400, detail="Username cannot exceed 120 characters")
+        user.name = clean_name
+
+    # 2. Update Email if provided
+    if payload.email is not None:
+        clean_email = payload.email.strip().lower()
+        if not clean_email or "@" not in clean_email or "." not in clean_email.split("@")[-1]:
+            raise HTTPException(status_code=400, detail="A valid email address is required")
+        if not is_email_allowed(clean_email):
+            raise HTTPException(status_code=403, detail="Email is not in the allowed list")
+        if clean_email != user.email:
+            existing_email = db.query(User).filter(User.email == clean_email, User.id != user.id).first()
+            if existing_email:
+                raise HTTPException(status_code=409, detail="This email is already in use by another account")
+            user.email = clean_email
+
+    # 3. Update Password if requested (STRICT!)
+    if payload.new_password:
+        new_pwd = payload.new_password.strip()
+        validate_strict_password(new_pwd)
+
+        if payload.confirm_password is not None and payload.confirm_password.strip() != new_pwd:
+            raise HTTPException(status_code=400, detail="Password confirmation does not match")
+
+        # If account has existing password, require and verify current_password
+        if user.password_hash and user.salt:
+            if not payload.current_password or not payload.current_password.strip():
+                raise HTTPException(status_code=400, detail="Current password is required to change password")
+            if not verify_password(payload.current_password.strip(), user.password_hash, user.salt):
+                raise HTTPException(status_code=401, detail="Current password is incorrect")
+            if verify_password(new_pwd, user.password_hash, user.salt):
+                raise HTTPException(status_code=400, detail="New password cannot be the same as current password")
+
+        new_hash, new_salt = hash_password(new_pwd)
+        user.password_hash = new_hash
+        user.salt = new_salt
+
+    db.commit()
+    db.refresh(user)
+
+    new_token, expires_at = create_session_token(
+        user_id=user.id,
+        email=user.email,
+        name=user.name,
+    )
+    return AuthSessionOut(
+        token=new_token,
+        user=UserOut.model_validate(user),
+        expires_at=expires_at,
+    )
 
 
 @app.get("/api/auth/mcp-code")

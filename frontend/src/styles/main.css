@@ -347,6 +347,212 @@ body {
   text-decoration: underline;
 }
 
+/* User Profile Menu & Dropdown */
+.user-dropdown-container {
+  position: relative;
+  display: inline-block;
+}
+
+.user-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding: 4px 12px 4px 5px;
+  font-size: 0.8rem;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.user-dropdown-trigger:hover,
+.user-dropdown-trigger.active {
+  border-color: var(--primary-orange);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-xs);
+}
+
+.user-dropdown-trigger .chevron-icon {
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+}
+
+.user-dropdown-trigger.active .chevron-icon {
+  transform: rotate(180deg);
+  color: var(--primary-orange);
+}
+
+.user-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 250px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.04);
+  padding: 6px;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  animation: dropdownFade 0.15s ease-out;
+}
+
+@keyframes dropdownFade {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.user-menu-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 10px;
+}
+
+.user-menu-avatar-wrap {
+  flex-shrink: 0;
+}
+
+.user-menu-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.user-menu-monogram {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--primary-orange-pill);
+  color: var(--primary-orange);
+  font-weight: 600;
+  font-size: 0.82rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.user-menu-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.user-menu-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-dark);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-menu-email {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-menu-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 4px 0;
+}
+
+.user-menu-item {
+  border: none;
+  background: transparent;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  color: var(--text-body);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.12s ease;
+}
+
+.user-menu-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-dark);
+}
+
+.user-menu-item svg {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: color 0.12s ease;
+}
+
+.user-menu-item:hover svg {
+  color: var(--primary-orange);
+}
+
+.user-menu-item-text {
+  flex: 1;
+  white-space: nowrap;
+}
+
+.menu-item-pill {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+}
+
+.menu-item-pill.is-active {
+  background: #f0fdf4;
+  color: #166534;
+  border-color: #bbf7d0;
+}
+
+.user-menu-item.item-danger:hover {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.user-menu-item.item-danger:hover svg {
+  color: #dc2626;
+}
+
+.user-menu-item.item-signout:hover {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.user-menu-item.item-signout:hover svg {
+  color: #b91c1c;
+}
+
+.user-menu-item.item-signin:hover {
+  background: var(--primary-orange-soft);
+  color: var(--primary-orange);
+}
+
+.user-menu-item.item-signin:hover svg {
+  color: var(--primary-orange);
+}
+
+
 /* Shared Card, Swatch & Badge Styles */
 .clickable-card {
   cursor: pointer;

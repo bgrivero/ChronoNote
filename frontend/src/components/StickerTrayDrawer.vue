@@ -22,7 +22,7 @@
     <!-- Target Context Banner -->
     <div class="target-context-banner">
       <span class="context-pill">
-        📍 Target: <strong>{{ targetLabel }}</strong>
+        Target: <strong>{{ targetLabel }}</strong>
       </span>
       <span class="context-hint">Click any sticker below to stamp it onto {{ targetHint }}</span>
     </div>

@@ -299,8 +299,17 @@ class UserOut(BaseModel):
     email: str
     name: str
     picture: str
+    has_password: bool = False
     created_at: datetime
     last_login_at: datetime
+
+
+class AccountProfileUpdateRequest(BaseModel):
+    name: str | None = None
+    email: str | None = None
+    current_password: str | None = None
+    new_password: str | None = None
+    confirm_password: str | None = None
 
 
 class AuthSessionOut(BaseModel):

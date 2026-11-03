@@ -41,6 +41,10 @@ class User(Base):
     stickers = relationship("Sticker", back_populates="owner", cascade="all, delete-orphan")
     sticker_placements = relationship("StickerPlacement", back_populates="owner", cascade="all, delete-orphan")
 
+    @property
+    def has_password(self) -> bool:
+        return bool(self.password_hash)
+
 
 class JournalSecret(Base):
     __tablename__ = "journal_secrets"

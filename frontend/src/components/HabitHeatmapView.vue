@@ -202,7 +202,7 @@
                 title="Edit habit"
                 @click="openEditHabitModal(habit)"
               >
-                ✏️ Edit
+                Edit
               </button>
               <button
                 type="button"
@@ -415,7 +415,7 @@
               class="btn-editorial-danger"
               @click="submitDeleteHabit"
             >
-              🗑️ Delete Habit
+              Delete Habit
             </button>
             <div class="modal-actions-right">
               <button
