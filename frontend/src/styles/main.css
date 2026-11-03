@@ -3815,5 +3815,42 @@ body {
   object-fit: contain;
 }
 
+/* Docs-Style Image Layouts */
+.md-img-inline {
+  margin: 12px 0;
+  display: block;
+}
+
+.md-img-wrap-left {
+  float: left;
+  margin: 8px 16px 12px 0;
+  clear: left;
+}
+
+.md-img-wrap-right {
+  float: right;
+  margin: 8px 0 12px 16px;
+  clear: right;
+}
+
+.docs-rendered-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.docs-img-caption {
+  display: block;
+  font-size: 0.74rem;
+  font-family: var(--font-serif, Georgia, serif);
+  font-style: italic;
+  color: var(--text-muted);
+  text-align: center;
+  margin-top: 4px;
+}
+
+
 
 

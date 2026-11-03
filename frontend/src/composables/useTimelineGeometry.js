@@ -1301,6 +1301,30 @@ export function renderMarkdownPreviewHtml(markdownText) {
       '$1<span class="tag-pill">#$2</span>'
     );
 
+    // Docs-style image layouts: Wrap Left, Wrap Right, or Draggable
+    line = line.replace(
+      /!\[([^\]]*)\]\(([^)]+)\)\{(?:mode="([^"]*)")?(?:,\s*(?:x="[^"]*",\s*y="[^"]*",\s*)?w="([^"]*)")?[^}]*\}/g,
+      (_, alt, src, mode, width) => {
+        const wStyle = width ? `max-width: ${width}px; width: 100%;` : "";
+        if (mode === "wrap_left") {
+          return `<div class="md-img-wrap-left" style="${wStyle}"><img src="${src}" alt="${alt}" class="docs-rendered-img" /><span class="docs-img-caption">${alt}</span></div>`;
+        }
+        if (mode === "wrap_right") {
+          return `<div class="md-img-wrap-right" style="${wStyle}"><img src="${src}" alt="${alt}" class="docs-rendered-img" /><span class="docs-img-caption">${alt}</span></div>`;
+        }
+        if (mode === "draggable") {
+          return `<div class="md-img-draggable-placeholder" data-src="${src}" data-alt="${alt}"></div>`;
+        }
+        return `<div class="md-img-inline" style="${wStyle}"><img src="${src}" alt="${alt}" class="docs-rendered-img" /><span class="docs-img-caption">${alt}</span></div>`;
+      }
+    );
+
+    // Standard inline markdown image
+    line = line.replace(
+      /!\[([^\]]*)\]\(([^)]+)\)/g,
+      '<div class="md-img-inline"><img src="$2" alt="$1" class="docs-rendered-img" /><span class="docs-img-caption">$1</span></div>'
+    );
+
     if (/^###\s+(.+)/.test(line)) {
       return `<h3>${line.replace(/^###\s+/, "")}</h3>`;
     }
