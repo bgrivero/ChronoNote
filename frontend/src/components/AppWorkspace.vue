@@ -348,40 +348,23 @@ const newSubtask = ref({
 });
 
 // Calendar Timeline Controls
+function getSystemTodayIso() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 const calendarScaleMode = ref("month");
-const selectedYear = ref(2026);
-const selectedMonth = ref(11); // November
-const todayIso = ref("2026-11-01");
-const selectedWeekAnchorIso = ref("2026-11-01");
+const todayIso = ref(getSystemTodayIso());
+const selectedYear = ref(new Date().getFullYear());
+const selectedMonth = ref(new Date().getMonth() + 1);
+const selectedWeekAnchorIso = ref(todayIso.value);
 const calendarProjectDisplayMode = ref("all"); // 'all' | 'milestones'
 
-// Decoupled Standalone One-Off Tasks (Inbox)
-const standaloneTasks = ref([
-  {
-    id: 9001,
-    project_id: null,
-    title: "Schedule quarterly dentist checkup",
-    description: "Call clinic to confirm routine cleaning.",
-    status: "todo",
-    priority: "medium",
-    color: "#e11d48",
-    start_date: "2026-11-04",
-    due_date: "2026-11-08",
-    is_milestone: false,
-  },
-  {
-    id: 9002,
-    project_id: null,
-    title: "Review hosting invoice & receipts",
-    description: "Export PDF for expense tracking.",
-    status: "todo",
-    priority: "high",
-    color: "#ea580c",
-    start_date: "2026-11-01",
-    due_date: "2026-11-02",
-    is_milestone: false,
-  },
-]);
+// Decoupled Standalone One-Off Tasks (Inbox) — starts clean with no random mock items
+const standaloneTasks = ref([]);
 
 function switchToWeekMode() {
   calendarScaleMode.value = "week";
@@ -2037,9 +2020,16 @@ function loadLocalProjectsAndTasks() {
     }
 
     if (rawT) {
-      projectTasksMap.value = JSON.parse(rawT);
+      const parsed = JSON.parse(rawT);
+      if (parsed[0]) {
+        // Strip mock tasks with IDs 9001 and 9002 if present from previous sessions
+        parsed[0] = parsed[0].filter((t) => t.id !== 9001 && t.id !== 9002);
+      }
+      projectTasksMap.value = parsed;
+      standaloneTasks.value = parsed[0] || [];
     } else {
       projectTasksMap.value = {};
+      standaloneTasks.value = [];
     }
   } catch {
     projects.value = [];
@@ -4624,6 +4614,8 @@ onMounted(async () => {
                       'is-draggable-project': item.kind === 'project',
                       'is-subtask-bar': item.kind === 'task',
                       'is-draggable-task': item.kind === 'task',
+                      'is-overdue-card': item.isOverdue,
+                      'is-milestone-card': item.isMilestone,
                       'is-currently-dragged':
                         activeTimelineDrag &&
                         ((activeTimelineDrag.isTask && activeTimelineDrag.taskId === item.taskId) ||
@@ -4926,6 +4918,10 @@ onMounted(async () => {
                       'is-draggable-project': item.kind === 'project',
                       'is-subtask-bar': item.kind === 'task',
                       'is-draggable-task': item.kind === 'task',
+                      'is-overdue-card': item.isOverdue,
+                      'is-milestone-card': item.isMilestone,
+                      'is-overdue-card': item.isOverdue,
+                      'is-milestone-card': item.isMilestone,
                       'is-currently-dragged':
                         activeTimelineDrag &&
                         ((activeTimelineDrag.isTask && activeTimelineDrag.taskId === item.taskId) ||
@@ -5058,6 +5054,10 @@ onMounted(async () => {
                       >
                         {{ item.title }}
                       </strong>
+
+                      <span v-if="item.isOverdue" class="overdue-tag-pill">
+                        OVERDUE
+                      </span>
 
                       <span v-if="item.isOverdue" class="overdue-tag-pill">
                         OVERDUE
