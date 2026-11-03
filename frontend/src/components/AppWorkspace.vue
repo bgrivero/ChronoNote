@@ -3602,7 +3602,10 @@ onMounted(async () => {
                     title="Delete project"
                     @click="deleteProject(proj.id)"
                   >
-                    🗑️
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                      </svg>
                   </button>
                 </div>
               </div>
@@ -4231,7 +4234,13 @@ onMounted(async () => {
           @click="taskFilterMode = taskFilterMode === 'overdue' ? 'all' : 'overdue'"
         >
           <div class="overdue-alert-left">
-            <span class="overdue-alert-icon">⚠️</span>
+            <span class="overdue-alert-icon">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+              </span>
             <strong class="overdue-alert-title">{{ totalOverdueTasksCount }} Overdue</strong>
           </div>
           <span class="overdue-count-pill">{{ totalOverdueTasksCount }}</span>
@@ -4249,7 +4258,7 @@ onMounted(async () => {
             <div class="picker-left">
               <span class="picker-indicator" style="background-color: #e11d48"></span>
               <div class="picker-info">
-                <span class="picker-name">★ One-Off Tasks (Inbox)</span>
+                <span class="picker-name">One-Off Tasks (Inbox)</span>
                 <span class="picker-dates">Decoupled tasks &amp; quick to-dos</span>
               </div>
             </div>
@@ -4401,7 +4410,7 @@ onMounted(async () => {
               :title="calendarProjectDisplayMode === 'milestones' ? 'Milestone Layer Active: Project spans hidden, showing milestone target dates' : 'Switch to Milestone Layer: Hide long spans and display milestone checkpoints'"
               @click="calendarProjectDisplayMode = calendarProjectDisplayMode === 'milestones' ? 'all' : 'milestones'"
             >
-              ◆ Milestones
+              Milestones
             </button>
 
             <!-- Subtask Filter: All | Active | Overdue | Done -->
@@ -4729,6 +4738,7 @@ onMounted(async () => {
                           </svg>
                         </button>
                         <span
+                          v-if="item.code"
                           class="color-badge-mono"
                           :style="{ color: item.color, borderColor: `${item.color}44` }"
                         >
@@ -5036,6 +5046,7 @@ onMounted(async () => {
                           </svg>
                         </button>
                         <span
+                          v-if="item.code"
                           class="color-badge-mono"
                           :style="{ color: item.color, borderColor: `${item.color}44` }"
                         >

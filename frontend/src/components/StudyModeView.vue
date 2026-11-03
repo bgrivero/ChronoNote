@@ -836,7 +836,7 @@ onBeforeUnmount(() => {
 }
 
 .study-title {
-  font-family: var(--font-serif, "Playfair Display", Georgia, serif);
+  font-family: var(--font-sans);
   font-size: 1.85rem;
   margin: 0.2rem 0 0.35rem;
   font-weight: 700;
@@ -1029,7 +1029,7 @@ onBeforeUnmount(() => {
   border: none;
   resize: none;
   padding: 1.25rem;
-  font-family: var(--font-serif, "Playfair Display", Georgia, serif);
+  font-family: var(--font-sans);
   font-size: 0.96rem;
   line-height: 1.68;
   color: var(--color-ink, #2d2a26);

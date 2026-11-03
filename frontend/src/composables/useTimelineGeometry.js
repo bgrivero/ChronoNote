@@ -781,7 +781,7 @@ export function buildMonthlyWeekRows(
     // Standalone / One-Off Tasks (decoupled from projects)
     const standaloneTasksRaw = (options.standaloneTasks || projectTasksMap[null] || projectTasksMap[0] || []).map((t) => ({
       ...t,
-      code: t.is_milestone ? "◆" : (t.code || "★"),
+      code: t.is_milestone ? "◆" : (t.code || ""),
     }));
     const standaloneFiltered = filterSubtasksByStatus(standaloneTasksRaw, taskFilterMode, todayIso);
     for (const task of standaloneFiltered) {
@@ -1076,7 +1076,7 @@ export function buildFocusedWeekRow(
   // Standalone / One-off Tasks in Week View
   const standaloneTasksRaw = (options.standaloneTasks || projectTasksMap[null] || projectTasksMap[0] || []).map((t) => ({
     ...t,
-    code: t.is_milestone ? "◆" : (t.code || "★"),
+    code: t.is_milestone ? "◆" : (t.code || ""),
   }));
   const standaloneFiltered = filterSubtasksByStatus(standaloneTasksRaw, taskFilterMode, todayIso);
   for (const task of standaloneFiltered) {

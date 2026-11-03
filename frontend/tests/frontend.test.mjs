@@ -357,7 +357,7 @@ test("Decoupled standalone one-off tasks appear on monthly calendar with inbox b
   const standaloneItem = week1Items.find((i) => i.taskId === 999);
   assert.ok(standaloneItem);
   assert.equal(standaloneItem.isStandalone, true);
-  assert.equal(standaloneItem.code, "★");
+  assert.equal(standaloneItem.code, "");
   assert.equal(standaloneItem.projectName, "Inbox");
 });
 
@@ -814,7 +814,7 @@ test("Study Pomodoro interval cycling and markdown auto-log bullet generation", 
 
   // Markdown log bullet
   const bullet = formatStudyLogMarkdown("Neuroscience", 25, "Read chapter 3", "Slides");
-  assert.equal(bullet, "- [x] 🍅 Focus (25m) on [[Neuroscience]] (Slides): Read chapter 3");
+  assert.equal(bullet, "- [x] Focus (25m) on [[Neuroscience]] (Slides): Read chapter 3");
 });
 
 test("Study Pomodoro wall-clock time remaining prevents background tab throttling drift", () => {

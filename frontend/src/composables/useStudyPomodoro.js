@@ -47,5 +47,5 @@ export function formatStudyLogMarkdown(projectName, durationMinutes, intention =
   const projTag = projectName ? `[[${projectName}]]` : "General Study";
   const taskTag = taskTitle ? ` (${taskTitle})` : "";
   const intentTag = intention ? `: ${intention.trim()}` : "";
-  return `- [x] 🍅 Focus (${durationMinutes}m) on ${projTag}${taskTag}${intentTag}`;
+  return `- [x] Focus (${durationMinutes}m) on ${projTag}${taskTag}${intentTag}`;
 }

@@ -2489,7 +2489,7 @@ def create_study_session(
         proj_label = f"[[{project.name}]]" if project else "Study Session"
         task_label = f" ({task.title})" if task else ""
         intent_label = f": {payload.intention.strip()}" if payload.intention.strip() else ""
-        bullet = f"- [x] 🍅 Focus ({payload.duration_minutes}m) on {proj_label}{task_label}{intent_label}"
+        bullet = f"- [x] Focus ({payload.duration_minutes}m) on {proj_label}{task_label}{intent_label}"
 
         if bullet not in (daily_note.content_md or ""):
             new_content = (daily_note.content_md or "").rstrip() + f"\n{bullet}\n"
