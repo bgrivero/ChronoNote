@@ -9,6 +9,15 @@ import DocsImageOverlay from "./DocsImageOverlay.vue";
 import { filterStickersByTarget, readFileAsDataUrl } from "../composables/useStickers.js";
 import { parseDocsImageDirectives, formatDocsImageMarkdown } from "../composables/useDocsImages.js";
 import {
+  PAPER_THEMES,
+  TYPOGRAPHY_THEMES,
+  PROJECT_COLOR_PALETTES,
+  loadCustomTheme,
+  saveCustomTheme,
+  getPaperStyleClass,
+  getTypographyClass,
+} from "../composables/useCustomThemes.js";
+import {
   extractHabitPills,
   toggleHabitInMarkdown,
   applyTemplateVariables,
@@ -1771,6 +1780,17 @@ function handleDeleteFloatingImage(target) {
   showNotification({ type: "success", message: "Image removed from journal" });
 }
 
+// ---------------------------------------------------------------------------
+// Visual Customization & Themes State
+// ---------------------------------------------------------------------------
+const customThemePrefs = ref(loadCustomTheme());
+const showThemeSettingsModal = ref(false);
+
+function updateThemeSetting(key, val) {
+  customThemePrefs.value[key] = val;
+  saveCustomTheme(customThemePrefs.value);
+}
+
 /**
  * Helper to determine if a habit slug is marked completed on a specific date
  */
@@ -3068,6 +3088,16 @@ onMounted(async () => {
           <span v-if="stickerPlacements.length" class="tab-count">{{ stickerPlacements.length }}</span>
         </button>
 
+        <!-- Theme Customizer Toggle Button -->
+        <button
+          type="button"
+          class="btn-editorial-ghost hide-on-mobile theme-toggle-btn"
+          title="Customize Paper Texture, Fonts & Appearance"
+          @click="showThemeSettingsModal = true"
+        >
+          <span>🎨 Theme</span>
+        </button>
+
         <!-- Google Account Pill / Sign-In Trigger -->
         <div v-if="currentUser" class="user-account-pill">
           <img
@@ -3764,7 +3794,11 @@ onMounted(async () => {
           <div
             v-if="!isEditingJournal"
             class="journal-preview-paper clickable-paper"
-            :class="{ 'is-empty': !journalDraftMd || !journalDraftMd.trim() }"
+            :class="[
+              { 'is-empty': !journalDraftMd || !journalDraftMd.trim() },
+              getPaperStyleClass(customThemePrefs.paperTheme),
+              getTypographyClass(customThemePrefs.typographyTheme),
+            ]"
             title="Click to write or edit markdown"
             @click="startEditingJournal(false)"
           >
@@ -3788,7 +3822,14 @@ onMounted(async () => {
           </div>
 
           <!-- 2. Notepad Textarea View (activated on focus/click; blur renders Markdown again & auto-saves) -->
-          <div v-else class="journal-notepad-wrapper">
+          <div
+            v-else
+            class="journal-notepad-wrapper"
+            :class="[
+              getPaperStyleClass(customThemePrefs.paperTheme),
+              getTypographyClass(customThemePrefs.typographyTheme),
+            ]"
+          >
             <textarea
               ref="journalTextareaRef"
               v-model="journalDraftMd"
@@ -6477,6 +6518,76 @@ onMounted(async () => {
               {{ isResetting ? "Wiping Data…" : "Permanently Delete Everything" }}
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =====================================================================
+         VISUAL THEMES & PAPER STYLES CUSTOMIZER MODAL
+         ===================================================================== -->
+    <div
+      v-if="showThemeSettingsModal"
+      class="slideover-backdrop modal-backdrop"
+      @click.self="showThemeSettingsModal = false"
+    >
+      <div class="theme-modal-card" role="dialog" aria-label="Visual Themes & Paper Styles">
+        <div class="template-manager-header">
+          <div>
+            <span class="journal-kicker">CUSTOM APPEARANCE</span>
+            <h2 class="editorial-serif-drawer-title">Paper Textures &amp; Fonts</h2>
+          </div>
+          <button
+            type="button"
+            class="close-drawer-btn"
+            @click="showThemeSettingsModal = false"
+          >
+            ×
+          </button>
+        </div>
+
+        <!-- Section 1: Paper Styles -->
+        <div>
+          <h4 class="setup-label">Paper Texture</h4>
+          <div class="theme-options-grid">
+            <div
+              v-for="p in PAPER_THEMES"
+              :key="p.id"
+              class="theme-option-card"
+              :class="{ active: customThemePrefs.paperTheme === p.id }"
+              @click="updateThemeSetting('paperTheme', p.id)"
+            >
+              <div class="theme-swatch-circle" :style="{ backgroundColor: p.bg }"></div>
+              <span class="theme-card-title">{{ p.name }}</span>
+              <span class="theme-card-desc">{{ p.desc }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 2: Typography Pairings -->
+        <div>
+          <h4 class="setup-label">Typography Pairing</h4>
+          <div class="theme-options-grid">
+            <div
+              v-for="f in TYPOGRAPHY_THEMES"
+              :key="f.id"
+              class="theme-option-card"
+              :class="{ active: customThemePrefs.typographyTheme === f.id }"
+              @click="updateThemeSetting('typographyTheme', f.id)"
+            >
+              <span class="theme-card-title">{{ f.name }}</span>
+              <span class="theme-card-desc" :style="{ fontFamily: f.fontHeader }">The quick brown fox</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="reset-modal-actions">
+          <button
+            type="button"
+            class="btn-orange-primary"
+            @click="showThemeSettingsModal = false"
+          >
+            Apply &amp; Done
+          </button>
         </div>
       </div>
     </div>

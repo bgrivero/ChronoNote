@@ -3852,6 +3852,119 @@ body {
   margin-top: 4px;
 }
 
+/* =========================================================================
+   CUSTOM VISUAL PAPER THEMES & TYPOGRAPHY PAIRINGS
+   ========================================================================= */
+
+/* Paper Themes */
+.paper-theme-clean_cream {
+  background-color: #fdfbf7;
+}
+
+.paper-theme-dot_grid {
+  background-color: #fcfaf6;
+  background-image: radial-gradient(#d5ccbe 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.paper-theme-lined_paper {
+  background-color: #fdfcf9;
+  background-image: linear-gradient(#e5dfd5 1px, transparent 1px);
+  background-size: 100% 28px;
+}
+
+.paper-theme-sepia_parchment {
+  background-color: #f6ede0;
+  border-color: #e0d0bc;
+}
+
+.paper-theme-dark_slate {
+  background-color: #1e293b;
+  color: #f1f5f9;
+}
+
+.paper-theme-dark_slate .journal-rendered-prose,
+.paper-theme-dark_slate .live-journal-notepad {
+  color: #f8fafc;
+  background: transparent;
+}
+
+/* Typography Themes */
+.font-theme-editorial {
+  font-family: var(--font-serif, "Playfair Display", Georgia, serif);
+}
+
+.font-theme-handwritten {
+  font-family: "Caveat", "Patrick Hand", cursive, serif;
+  font-size: 1.15rem;
+}
+
+.font-theme-monospace {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 0.92rem;
+}
+
+/* Theme Modal & Switcher */
+.theme-modal-card {
+  width: 500px;
+  max-width: 95vw;
+  background: var(--color-paper, #fdfbf7);
+  border-radius: 12px;
+  padding: 1.75rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.theme-options-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+}
+
+.theme-option-card {
+  display: flex;
+  flex-direction: column;
+  padding: 0.85rem;
+  border: 1.5px solid #e5dfd5;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  background: #fff;
+}
+
+.theme-option-card:hover {
+  border-color: #93c5fd;
+  transform: translateY(-1px);
+}
+
+.theme-option-card.active {
+  border-color: #6366f1;
+  background: #f5f3ff;
+}
+
+.theme-swatch-circle {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  margin-bottom: 0.4rem;
+}
+
+.theme-card-title {
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: #1e293b;
+}
+
+.theme-card-desc {
+  font-size: 0.74rem;
+  color: #64748b;
+  margin-top: 0.2rem;
+}
+
+
 
 
 

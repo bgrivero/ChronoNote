@@ -55,6 +55,12 @@ import {
   formatDocsImageMarkdown,
   computeDraggableImageStyle,
 } from "../src/composables/useDocsImages.js";
+import {
+  PAPER_THEMES,
+  TYPOGRAPHY_THEMES,
+  getPaperStyleClass,
+  getTypographyClass,
+} from "../src/composables/useCustomThemes.js";
 
 test("Left Sidebar partitions pinned vs regular projects, orders by sidebar_order, and filters archived", () => {
   const sampleProjects = [
@@ -810,6 +816,22 @@ And a wrap-left diagram:
   assert.ok(rendered.includes('class="md-img-inline"'));
   assert.ok(rendered.includes('class="md-img-wrap-left"'));
 });
+
+test("Custom paper themes, typography pairings, and style classes", () => {
+  assert.ok(PAPER_THEMES.length >= 5);
+  const paperIds = PAPER_THEMES.map((p) => p.id);
+  assert.ok(paperIds.includes("clean_cream"));
+  assert.ok(paperIds.includes("dot_grid"));
+  assert.ok(paperIds.includes("lined_paper"));
+
+  assert.equal(getPaperStyleClass("dot_grid"), "paper-theme-dot_grid");
+  assert.equal(getPaperStyleClass("nonexistent"), "paper-theme-clean_cream");
+
+  assert.equal(getTypographyClass("handwritten"), "font-theme-handwritten");
+  assert.equal(getTypographyClass("monospace"), "font-theme-monospace");
+  assert.equal(getTypographyClass("invalid"), "font-theme-editorial");
+});
+
 
 
 
