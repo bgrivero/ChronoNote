@@ -44,6 +44,7 @@ import {
   calculatePomodoroProgress,
   getNextPomodoroMode,
   formatStudyLogMarkdown,
+  computeRemainingSeconds,
 } from "../src/composables/useStudyPomodoro.js";
 import {
   computeStickerTransformStyle,
@@ -294,6 +295,70 @@ test("Monthly 1-row-per-week builder stacks overlapping tasks into separate vert
   assert.equal(yearSpan.visible, true);
   assert.equal(yearSpan.startMonthCol, 10);
   assert.equal(yearSpan.spanMonthCols, 2);
+});
+
+test("Milestone Layer suppresses long project spans and renders target milestones and milestone diamonds", () => {
+  const pinnedProjects = [
+    { id: 1, name: "Long Architecture Refactor", is_pinned: true, start_date: "2026-11-01", target_date: "2026-11-20" },
+  ];
+  const tasksMap = {
+    1: [
+      { id: 101, title: "Database Schema Signoff", is_milestone: true, status: "todo", start_date: "2026-11-04", due_date: "2026-11-04" },
+      { id: 102, title: "Regular subtask", is_milestone: false, status: "todo", start_date: "2026-11-02", due_date: "2026-11-05" },
+    ],
+  };
+
+  // 1. In 'milestones' mode, the long 20-day project bar is replaced by a milestone target on 2026-11-20
+  const milestoneWeeks = buildMonthlyWeekRows(2026, 11, pinnedProjects, tasksMap, {
+    projectDisplayMode: "milestones",
+  });
+
+  const week1Items = milestoneWeeks.weeks[0].items;
+  // Week 1 should NOT have the 20-day project span bar
+  assert.ok(!week1Items.some((i) => i.kind === "project"));
+  // Week 1 should contain the milestone diamond task
+  const milestoneItem = week1Items.find((i) => i.taskId === 101);
+  assert.ok(milestoneItem);
+  assert.equal(milestoneItem.isMilestone, true);
+  assert.equal(milestoneItem.code, "◆");
+});
+
+test("Overdue status filtering identifies past due tasks and projects", () => {
+  const tasks = [
+    { id: 1, title: "Past Task", status: "todo", due_date: "2026-11-01" },
+    { id: 2, title: "Completed Task", status: "done", due_date: "2026-11-01" },
+    { id: 3, title: "Future Task", status: "todo", due_date: "2026-11-15" },
+  ];
+
+  const overdue = filterSubtasksByStatus(tasks, "overdue", "2026-11-05");
+  assert.equal(overdue.length, 1);
+  assert.equal(overdue[0].id, 1);
+
+  const projects = [
+    { id: 1, name: "Overdue Project", status: "active", target_date: "2026-11-02" },
+    { id: 2, name: "Healthy Project", status: "active", target_date: "2026-11-20" },
+  ];
+  const overdueProjs = filterProjectsByStatus(projects, "overdue", {}, "2026-11-05");
+  assert.equal(overdueProjs.length, 1);
+  assert.equal(overdueProjs[0].id, 1);
+});
+
+test("Decoupled standalone one-off tasks appear on monthly calendar with inbox badge", () => {
+  const standaloneTasks = [
+    { id: 999, title: "Pay Quarterly Taxes", status: "todo", due_date: "2026-11-03", color: "#e11d48" },
+  ];
+
+  const monthWeeks = buildMonthlyWeekRows(2026, 11, [], {}, {
+    standaloneTasks,
+    todayIso: "2026-11-01",
+  });
+
+  const week1Items = monthWeeks.weeks[0].items;
+  const standaloneItem = week1Items.find((i) => i.taskId === 999);
+  assert.ok(standaloneItem);
+  assert.equal(standaloneItem.isStandalone, true);
+  assert.equal(standaloneItem.code, "★");
+  assert.equal(standaloneItem.projectName, "Inbox");
 });
 
 test("Subtask status filter ('all' | 'active' | 'done') and custom project/subtask colors work in Monthly Week rows", () => {
@@ -750,6 +815,20 @@ test("Study Pomodoro interval cycling and markdown auto-log bullet generation", 
   // Markdown log bullet
   const bullet = formatStudyLogMarkdown("Neuroscience", 25, "Read chapter 3", "Slides");
   assert.equal(bullet, "- [x] 🍅 Focus (25m) on [[Neuroscience]] (Slides): Read chapter 3");
+});
+
+test("Study Pomodoro wall-clock time remaining prevents background tab throttling drift", () => {
+  const now = 1000000;
+  // 25 minutes remaining (1500 seconds)
+  const targetEnd = now + 1500 * 1000;
+
+  // After 10 minutes (600s), tab wake up
+  const wakeUpAfter10Min = now + 600 * 1000;
+  assert.equal(computeRemainingSeconds(targetEnd, wakeUpAfter10Min), 900);
+
+  // When past target time (tab was asleep past the session end)
+  const wakeUpPastEnd = targetEnd + 5000;
+  assert.equal(computeRemainingSeconds(targetEnd, wakeUpPastEnd), 0);
 });
 
 test("Sticker placement filters by date/note and computes CSS transform styling", () => {

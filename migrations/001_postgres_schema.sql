@@ -43,7 +43,8 @@ CREATE INDEX IF NOT EXISTS ix_notes_note_date ON notes (note_date);
 
 CREATE TABLE IF NOT EXISTS tasks (
     id SERIAL PRIMARY KEY,
-    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    user_id INTEGER NULL REFERENCES users(id) ON DELETE CASCADE,
+    project_id INTEGER NULL REFERENCES projects(id) ON DELETE CASCADE,
     source_note_id INTEGER NULL REFERENCES notes(id) ON DELETE SET NULL,
     title VARCHAR(240) NOT NULL,
     description TEXT NOT NULL DEFAULT '',
@@ -59,6 +60,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE INDEX IF NOT EXISTS ix_tasks_user_id ON tasks (user_id);
 CREATE INDEX IF NOT EXISTS ix_tasks_project_id ON tasks (project_id);
 CREATE INDEX IF NOT EXISTS ix_tasks_source_note_id ON tasks (source_note_id);
 CREATE INDEX IF NOT EXISTS ix_tasks_status ON tasks (status);

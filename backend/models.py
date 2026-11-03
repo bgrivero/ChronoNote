@@ -32,6 +32,7 @@ class User(Base):
     last_login_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
     projects = relationship("Project", back_populates="owner", cascade="all, delete-orphan")
+    tasks = relationship("Task", back_populates="owner", cascade="all, delete-orphan")
     notes = relationship("Note", back_populates="owner", cascade="all, delete-orphan")
     journal_secrets = relationship("JournalSecret", back_populates="owner", cascade="all, delete-orphan")
     habits = relationship("Habit", back_populates="owner", cascade="all, delete-orphan")
@@ -87,7 +88,8 @@ class Task(Base):
     __tablename__ = "tasks"
 
     id = Column(Integer, primary_key=True, index=True)
-    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True)
     source_note_id = Column(Integer, ForeignKey("notes.id", ondelete="SET NULL"), nullable=True, index=True)
     title = Column(String(240), nullable=False)
     description = Column(Text, default="")
@@ -102,6 +104,7 @@ class Task(Base):
     created_at = Column(DateTime(timezone=True), default=utc_now)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
+    owner = relationship("User", back_populates="tasks")
     project = relationship("Project", back_populates="tasks")
     source_note = relationship("Note", back_populates="extracted_tasks")
 

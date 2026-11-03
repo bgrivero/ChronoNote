@@ -7,7 +7,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, WebSocket, W
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import inspect, or_, text
+from sqlalchemy import and_, inspect, or_, text
 from sqlalchemy.orm import Session
 
 from backend.config import settings
@@ -124,6 +124,19 @@ def _ensure_task_color_column() -> None:
                     conn.execute(
                         text("ALTER TABLE tasks ADD COLUMN color VARCHAR(20) DEFAULT '#0891b2'")
                     )
+            if "user_id" not in cols:
+                with engine.begin() as conn:
+                    conn.execute(
+                        text("ALTER TABLE tasks ADD COLUMN user_id INTEGER NULL")
+                    )
+            if engine.dialect.name == "postgresql":
+                with engine.begin() as conn:
+                    try:
+                        conn.execute(
+                            text("ALTER TABLE tasks ALTER COLUMN project_id DROP NOT NULL")
+                        )
+                    except Exception:
+                        pass
         if "projects" in table_names:
             cols = {c["name"] for c in insp.get_columns("projects")}
             if "user_id" not in cols:
@@ -268,10 +281,10 @@ def _sync_note_metadata_and_tasks(
         db.add(link)
 
     synced_task_ids: list[int] = []
-    if sync_inline_tasks and note.project_id is not None:
+    if sync_inline_tasks:
         existing_tasks = (
             db.query(Task)
-            .filter(Task.source_note_id == note.id, Task.project_id == note.project_id)
+            .filter(Task.source_note_id == note.id)
             .all()
         )
         existing_by_title = {t.title: t for t in existing_tasks}
@@ -287,10 +300,14 @@ def _sync_note_metadata_and_tasks(
                 t_obj.start_date = item.start_date or t_obj.start_date or note.note_date
                 t_obj.due_date = item.due_date or t_obj.due_date
                 t_obj.is_milestone = item.is_milestone
+                if note.project_id is not None:
+                    t_obj.project_id = note.project_id
+                t_obj.user_id = note.user_id
                 db.flush()
                 synced_task_ids.append(t_obj.id)
             else:
                 new_task = Task(
+                    user_id=note.user_id,
                     project_id=note.project_id,
                     source_note_id=note.id,
                     title=item.title,
@@ -298,7 +315,7 @@ def _sync_note_metadata_and_tasks(
                     status=item.status,
                     priority=item.priority,
                     start_date=item.start_date or note.note_date,
-                    due_date=item.due_date,
+                    due_date=item.due_date or (note.note_date if note.is_daily_note else None),
                     is_milestone=item.is_milestone,
                     progress=item.progress,
                 )
@@ -1431,10 +1448,18 @@ def delete_project(project_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/api/tasks", response_model=TaskOut, status_code=status.HTTP_201_CREATED)
-def create_task(payload: TaskCreate, db: Session = Depends(get_db)):
-    proj = db.query(Project).filter(Project.id == payload.project_id).first()
-    if not proj:
-        raise HTTPException(status_code=404, detail="Parent project not found")
+def create_task(
+    payload: TaskCreate,
+    user: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    task_user_id = user.id if user else None
+    if payload.project_id is not None:
+        proj = db.query(Project).filter(Project.id == payload.project_id).first()
+        if not proj:
+            raise HTTPException(status_code=404, detail="Parent project not found")
+        if proj.user_id:
+            task_user_id = proj.user_id
 
     if payload.depends_on_id is not None:
         dep = db.query(Task).filter(Task.id == payload.depends_on_id).first()
@@ -1447,6 +1472,7 @@ def create_task(payload: TaskCreate, db: Session = Depends(get_db)):
 
     progress = 100 if payload.status == "done" else payload.progress
     task = Task(
+        user_id=task_user_id,
         project_id=payload.project_id,
         source_note_id=payload.source_note_id,
         title=payload.title,
@@ -1484,18 +1510,28 @@ def create_task(payload: TaskCreate, db: Session = Depends(get_db)):
 def list_tasks(
     project_id: int | None = Query(default=None),
     status_filter: str | None = Query(default=None),
+    standalone_only: bool = Query(default=False),
     user: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
-    q = db.query(Task).join(Project, Task.project_id == Project.id)
+    q = db.query(Task).outerjoin(Project, Task.project_id == Project.id)
     if user is not None:
-        q = q.filter(Project.user_id == user.id)
+        q = q.filter(or_(Task.user_id == user.id, Project.user_id == user.id))
     else:
-        q = q.filter(Project.user_id.is_(None))
-    if project_id is not None:
+        q = q.filter(and_(Task.user_id.is_(None), Project.user_id.is_(None)))
+
+    if standalone_only:
+        q = q.filter(Task.project_id.is_(None))
+    elif project_id is not None:
         q = q.filter(Task.project_id == project_id)
+
     if status_filter is not None:
-        q = q.filter(Task.status == status_filter)
+        if status_filter == "overdue":
+            today = date.today()
+            q = q.filter(Task.due_date.isnot(None), Task.due_date < today, Task.status != "done")
+        else:
+            q = q.filter(Task.status == status_filter)
+
     rows = q.order_by(Task.start_date.asc(), Task.due_date.asc(), Task.id.asc()).all()
     return [_serialize_task(r) for r in rows]
 

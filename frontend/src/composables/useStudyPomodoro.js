@@ -34,6 +34,15 @@ export function getNextPomodoroMode(currentMode, completedCycleCount) {
   return { nextMode: "focus", completedCount: completedCycleCount };
 }
 
+/**
+ * Calculates remaining seconds using wall-clock timestamps to avoid timer drift
+ * caused by browser background tab throttling.
+ */
+export function computeRemainingSeconds(targetTimestampMs, currentTimestampMs = Date.now()) {
+  const diffMs = targetTimestampMs - currentTimestampMs;
+  return Math.max(0, Math.round(diffMs / 1000));
+}
+
 export function formatStudyLogMarkdown(projectName, durationMinutes, intention = "", taskTitle = "") {
   const projTag = projectName ? `[[${projectName}]]` : "General Study";
   const taskTag = taskTitle ? ` (${taskTitle})` : "";

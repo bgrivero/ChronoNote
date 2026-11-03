@@ -353,6 +353,35 @@ const selectedYear = ref(2026);
 const selectedMonth = ref(11); // November
 const todayIso = ref("2026-11-01");
 const selectedWeekAnchorIso = ref("2026-11-01");
+const calendarProjectDisplayMode = ref("all"); // 'all' | 'milestones'
+
+// Decoupled Standalone One-Off Tasks (Inbox)
+const standaloneTasks = ref([
+  {
+    id: 9001,
+    project_id: null,
+    title: "Schedule quarterly dentist checkup",
+    description: "Call clinic to confirm routine cleaning.",
+    status: "todo",
+    priority: "medium",
+    color: "#e11d48",
+    start_date: "2026-11-04",
+    due_date: "2026-11-08",
+    is_milestone: false,
+  },
+  {
+    id: 9002,
+    project_id: null,
+    title: "Review hosting invoice & receipts",
+    description: "Export PDF for expense tracking.",
+    status: "todo",
+    priority: "high",
+    color: "#ea580c",
+    start_date: "2026-11-01",
+    due_date: "2026-11-02",
+    is_milestone: false,
+  },
+]);
 
 function switchToWeekMode() {
   calendarScaleMode.value = "week";
@@ -530,9 +559,36 @@ const timelineSwimlaneProjects = computed(() => {
 });
 
 // Currently selected project object for the Slide-Over Drawer
-const selectedProject = computed(
-  () => projects.value.find((p) => p.id === selectedProjectId.value) || null
-);
+const selectedProject = computed(() => {
+  if (selectedProjectId.value === 0 || selectedProjectId.value === "inbox") {
+    return {
+      id: 0,
+      name: "Inbox & One-Off Tasks",
+      color: "#e11d48",
+      status: "active",
+      description: "Decoupled standalone tasks not tied to any project",
+      start_date: todayIso.value,
+      target_date: todayIso.value,
+      is_pinned: false,
+    };
+  }
+  return projects.value.find((p) => p.id === selectedProjectId.value) || null;
+});
+
+const allWorkspaceTasks = computed(() => {
+  const list = [...standaloneTasks.value];
+  for (const pTasks of Object.values(projectTasksMap.value || {})) {
+    list.push(...pTasks);
+  }
+  return list;
+});
+
+const totalOverdueTasksCount = computed(() => {
+  const refDate = todayIso.value;
+  return allWorkspaceTasks.value.filter(
+    (t) => t.due_date && t.due_date < refDate && t.status !== "done" && t.progress !== 100
+  ).length;
+});
 
 // Letter prefix for the selected project (A, B, C...)
 const selectedProjectPrefix = computed(() => {
@@ -579,6 +635,8 @@ const monthlyWeeksSpec = computed(() =>
     projectTasksMap.value,
     {
       taskFilterMode: taskFilterMode.value,
+      projectDisplayMode: calendarProjectDisplayMode.value,
+      standaloneTasks: standaloneTasks.value,
       dailyNotesMap: dailyJournalsMap.value,
       todayIso: todayIso.value,
       visibleSubtaskProjectIds: visibleTimelineSubtaskProjectIds.value,
@@ -595,6 +653,8 @@ const focusedWeekSpec = computed(() =>
     projectTasksMap.value,
     {
       taskFilterMode: taskFilterMode.value,
+      projectDisplayMode: calendarProjectDisplayMode.value,
+      standaloneTasks: standaloneTasks.value,
       dailyNotesMap: dailyJournalsMap.value,
       todayIso: todayIso.value,
       visibleSubtaskProjectIds: visibleTimelineSubtaskProjectIds.value,
@@ -620,7 +680,7 @@ const sortedJournalEntries = computed(() => {
     }));
 });
 
-// Tasks active on the selected journal date across all projects
+// Tasks active on the selected journal date across all projects + standalone inbox
 const tasksOnSelectedJournalDate = computed(() => {
   const iso = selectedJournalDate.value;
   if (!iso) return [];
@@ -637,6 +697,17 @@ const tasksOnSelectedJournalDate = computed(() => {
           projectColor: proj.color || "#b85423",
         });
       }
+    }
+  }
+  for (const t of standaloneTasks.value) {
+    const start = t.start_date || t.due_date;
+    const end = t.due_date || t.start_date;
+    if (start && end && start <= iso && end >= iso) {
+      matches.push({
+        ...t,
+        projectName: "Inbox",
+        projectColor: t.color || "#e11d48",
+      });
     }
   }
   return matches;
@@ -2467,14 +2538,23 @@ async function fetchProjectsAndTimeline() {
     if (tasksRes.ok) {
       const allTasks = await tasksRes.json();
       const grouped = {};
+      const stList = [];
       for (const t of allTasks) {
-        if (!grouped[t.project_id]) grouped[t.project_id] = [];
-        grouped[t.project_id].push({
+        const pid = t.project_id || 0;
+        if (!grouped[pid]) grouped[pid] = [];
+        const item = {
           ...t,
-          color: t.color || "#2c666e",
-        });
+          color: t.color || (t.project_id ? "#2c666e" : "#e11d48"),
+        };
+        grouped[pid].push(item);
+        if (!t.project_id) {
+          stList.push(item);
+        }
       }
       projectTasksMap.value = grouped;
+      if (stList.length > 0) {
+        standaloneTasks.value = stList;
+      }
       persistLocalProjectsAndTasks();
     }
     const journalRes = await fetch(`${API_BASE}/journal`, {
@@ -2891,12 +2971,13 @@ async function onCardDrop(event, targetProj, targetStatus) {
 async function addSubtaskToSelectedProject() {
   if (!selectedProject.value || !newSubtask.value.title.trim()) return;
   const pid = selectedProject.value.id;
+  const isInbox = pid === 0;
   const payload = {
-    project_id: pid,
+    project_id: isInbox ? null : pid,
     title: newSubtask.value.title.trim(),
     description: newSubtask.value.description ? newSubtask.value.description.trim() : "",
     status: "todo",
-    color: newSubtask.value.color || "#2c666e",
+    color: newSubtask.value.color || (isInbox ? "#e11d48" : "#2c666e"),
     start_date: newSubtask.value.start_date || selectedProject.value.start_date,
     due_date: newSubtask.value.due_date || selectedProject.value.target_date,
   };
@@ -2910,10 +2991,14 @@ async function addSubtaskToSelectedProject() {
     if (res.ok) {
       const created = await res.json();
       if (!projectTasksMap.value[pid]) projectTasksMap.value[pid] = [];
-      projectTasksMap.value[pid].push({
+      const item = {
         ...created,
         color: created.color || payload.color,
-      });
+      };
+      projectTasksMap.value[pid].push(item);
+      if (isInbox) {
+        standaloneTasks.value = [...projectTasksMap.value[0]];
+      }
       persistLocalProjectsAndTasks();
       newSubtask.value.title = "";
       newSubtask.value.description = "";
@@ -2924,22 +3009,30 @@ async function addSubtaskToSelectedProject() {
   }
 
   if (!projectTasksMap.value[pid]) projectTasksMap.value[pid] = [];
-  projectTasksMap.value[pid].push({
+  const localItem = {
     id: Date.now(),
     ...payload,
-  });
+  };
+  projectTasksMap.value[pid].push(localItem);
+  if (isInbox) {
+    standaloneTasks.value = [...projectTasksMap.value[0]];
+  }
   persistLocalProjectsAndTasks();
   newSubtask.value.title = "";
   newSubtask.value.description = "";
 }
 
 async function toggleSubtaskStatus(projectId, taskId) {
-  const list = projectTasksMap.value[projectId] || [];
+  const pKey = projectId === null || projectId === undefined ? 0 : projectId;
+  const list = projectTasksMap.value[pKey] || [];
   const target = list.find((t) => t.id === taskId);
   if (!target) return;
 
   const nextStatus = target.status === "done" ? "todo" : "done";
   target.status = nextStatus;
+  if (pKey === 0) {
+    standaloneTasks.value = [...list];
+  }
   persistLocalProjectsAndTasks();
 
   try {
@@ -2957,10 +3050,14 @@ async function toggleSubtaskStatus(projectId, taskId) {
 }
 
 async function updateSubtaskFields(projectId, taskId, patch) {
-  const list = projectTasksMap.value[projectId] || [];
+  const pKey = projectId === null || projectId === undefined ? 0 : projectId;
+  const list = projectTasksMap.value[pKey] || [];
   const target = list.find((t) => t.id === taskId);
   if (!target) return;
   Object.assign(target, patch);
+  if (pKey === 0) {
+    standaloneTasks.value = [...list];
+  }
   persistLocalProjectsAndTasks();
 
   try {
@@ -2975,8 +3072,12 @@ async function updateSubtaskFields(projectId, taskId, patch) {
 }
 
 async function deleteSubtask(projectId, taskId) {
-  const list = projectTasksMap.value[projectId] || [];
-  projectTasksMap.value[projectId] = list.filter((t) => t.id !== taskId);
+  const pKey = projectId === null || projectId === undefined ? 0 : projectId;
+  const list = projectTasksMap.value[pKey] || [];
+  projectTasksMap.value[pKey] = list.filter((t) => t.id !== taskId);
+  if (pKey === 0) {
+    standaloneTasks.value = [...(projectTasksMap.value[0] || [])];
+  }
   persistLocalProjectsAndTasks();
   try {
     await fetch(`${API_BASE}/tasks/${taskId}`, {
@@ -4131,7 +4232,44 @@ onMounted(async () => {
           Select a project to manage subtasks, or click any date on the calendar to open that day’s journal.
         </p>
 
+        <!-- Overdue Tasks Banner (Visible when overdue items exist) -->
+        <div
+          v-if="totalOverdueTasksCount > 0"
+          class="sidebar-overdue-alert clickable-card"
+          :class="{ active: taskFilterMode === 'overdue' }"
+          title="Click to filter all overdue tasks across projects and inbox"
+          @click="taskFilterMode = taskFilterMode === 'overdue' ? 'all' : 'overdue'"
+        >
+          <div class="overdue-alert-left">
+            <span class="overdue-alert-icon">⚠️</span>
+            <div class="overdue-alert-info">
+              <strong class="overdue-alert-title">{{ totalOverdueTasksCount }} Overdue Tasks</strong>
+              <small class="overdue-alert-sub">Action required</small>
+            </div>
+          </div>
+          <span class="overdue-count-pill">{{ totalOverdueTasksCount }}</span>
+        </div>
+
         <div class="sidebar-project-picker">
+          <!-- Standalone One-Off Tasks / Inbox Row -->
+          <div
+            class="picker-row clickable-card is-inbox-row"
+            :class="{ active: selectedProjectId === 0 }"
+            style="border-left: 3.5px solid #e11d48;"
+            title="Decoupled standalone one-off tasks not tied to any project"
+            @click="openProjectDrawer(0, 'subtasks')"
+          >
+            <div class="picker-left">
+              <span class="picker-indicator" style="background-color: #e11d48"></span>
+              <div class="picker-info">
+                <span class="picker-name">★ One-Off Tasks (Inbox)</span>
+                <span class="picker-dates">Decoupled tasks &amp; quick to-dos</span>
+              </div>
+            </div>
+            <div class="picker-badges">
+              <span class="badge-count">{{ standaloneTasks.length }}</span>
+            </div>
+          </div>
           <div
             v-for="proj in sidebarProjects"
             :key="proj.id"
@@ -4268,7 +4406,18 @@ onMounted(async () => {
           </div>
 
           <div class="scale-Right-controls">
-            <!-- Subtask Filter: All | Active | Done -->
+            <!-- Milestone Layer Toggle -->
+            <button
+              type="button"
+              class="scale-btn milestone-layer-btn"
+              :class="{ active: calendarProjectDisplayMode === 'milestones' }"
+              :title="calendarProjectDisplayMode === 'milestones' ? 'Milestone Layer Active: Project spans hidden, showing milestone target dates' : 'Switch to Milestone Layer: Hide long spans and display milestone checkpoints'"
+              @click="calendarProjectDisplayMode = calendarProjectDisplayMode === 'milestones' ? 'all' : 'milestones'"
+            >
+              ◆ Milestones
+            </button>
+
+            <!-- Subtask Filter: All | Active | Overdue | Done -->
             <div class="segmented-scale" aria-label="Subtask Status Filter">
               <button
                 type="button"
@@ -4285,6 +4434,17 @@ onMounted(async () => {
                 @click="taskFilterMode = 'active'"
               >
                 Active
+              </button>
+              <button
+                type="button"
+                class="scale-btn scale-btn-overdue"
+                :class="{ active: taskFilterMode === 'overdue' }"
+                @click="taskFilterMode = 'overdue'"
+              >
+                Overdue
+                <span v-if="totalOverdueTasksCount > 0" class="overdue-bubble">
+                  {{ totalOverdueTasksCount }}
+                </span>
               </button>
               <button
                 type="button"
@@ -4544,6 +4704,11 @@ onMounted(async () => {
                         </span>
                       </template>
 
+                      <template v-else-if="item.kind === 'milestone'">
+                        <span class="milestone-diamond-badge" :style="{ backgroundColor: item.color }">
+                          ◆
+                        </span>
+                      </template>
                       <template v-else>
                         <button
                           type="button"
@@ -4590,6 +4755,10 @@ onMounted(async () => {
                       >
                         {{ item.title }}
                       </strong>
+
+                      <span v-if="item.isOverdue" class="overdue-tag-pill">
+                        OVERDUE
+                      </span>
 
                       <!-- Subtasks toggle button pill right on the project card -->
                       <button
@@ -4838,6 +5007,11 @@ onMounted(async () => {
                         </span>
                       </template>
 
+                      <template v-else-if="item.kind === 'milestone'">
+                        <span class="milestone-diamond-badge" :style="{ backgroundColor: item.color }">
+                          ◆
+                        </span>
+                      </template>
                       <template v-else>
                         <button
                           type="button"
@@ -4884,6 +5058,10 @@ onMounted(async () => {
                       >
                         {{ item.title }}
                       </strong>
+
+                      <span v-if="item.isOverdue" class="overdue-tag-pill">
+                        OVERDUE
+                      </span>
 
                       <!-- Subtasks toggle button pill right on the project card -->
                       <button

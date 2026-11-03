@@ -64,7 +64,7 @@ class SidebarProjectItem(ProjectOut):
 
 
 class TaskCreate(BaseModel):
-    project_id: int
+    project_id: int | None = None
     source_note_id: int | None = None
     title: str = Field(..., min_length=1, max_length=240)
     description: str = ""
@@ -80,6 +80,7 @@ class TaskCreate(BaseModel):
 
 
 class TaskUpdate(BaseModel):
+    project_id: int | None = None
     title: str | None = Field(default=None, min_length=1, max_length=240)
     description: str | None = None
     status: TaskStatus | None = None
@@ -97,8 +98,9 @@ class TaskOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    project_id: int
-    source_note_id: int | None
+    user_id: int | None = None
+    project_id: int | None = None
+    source_note_id: int | None = None
     title: str
     description: str
     status: str
