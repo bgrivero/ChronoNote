@@ -1433,47 +1433,40 @@ export function computeKnowledgeGraphLayout(graph, viewport = {}) {
 export function renderMarkdownPreviewHtml(markdownText) {
   if (!markdownText) return "";
 
+  // 1. Strip YAML frontmatter
   const withoutFrontmatter = markdownText.replace(
     /^---\s*\r?\n[\s\S]*?\r?\n---\s*(?:\r?\n|$)/,
     ""
   );
 
-  const lines = withoutFrontmatter.split(/\r?\n/);
-  const htmlLines = lines.map((rawLine) => {
-    let line = rawLine
+  // 2. Extract code blocks so their contents aren't affected by markdown transforms
+  const codeBlocks = [];
+  const withCodeBlocksPlaceholders = withoutFrontmatter.replace(
+    /```([a-zA-Z0-9_-]*)\r?\n([\s\S]*?)```/g,
+    (_, lang, code) => {
+      const idx = codeBlocks.length;
+      const safeCode = code
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      codeBlocks.push(
+        `<pre class="md-code-block"><code class="${lang ? `language-${lang}` : ""}">${safeCode}</code></pre>`
+      );
+      return `%%CODEBLOCK_${idx}%%`;
+    }
+  );
+
+  function formatInline(raw) {
+    let s = raw
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;");
 
-    line = line.replace(
-      /\[\[([^\]|#]+?)(?:\|([^\]]+?))?\]\]/g,
-      (_, target, alias) => {
-        const slug = target
-          .trim()
-          .toLowerCase()
-          .replace(/[^\w\s-]/g, "")
-          .replace(/[\s_]+/g, "-");
-        const label = (alias || target).trim();
-        return `<a class="wikilink" data-slug="${slug}" href="#/notes/${slug}">[[${label}]]</a>`;
-      }
-    );
-
-    line = line.replace(
-      /@(start|due|priority)\(([^)]+)\)/gi,
-      '<span class="directive-pill directive-$1">@$1($2)</span>'
-    );
-    line = line.replace(
-      /@milestone\b/gi,
-      '<span class="directive-pill directive-milestone">@milestone</span>'
-    );
-
-    line = line.replace(
-      /(^|\s)#([a-zA-Z][a-zA-Z0-9_-]{1,49})\b/g,
-      '$1<span class="tag-pill">#$2</span>'
-    );
+    // Inline code
+    s = s.replace(/`([^`\n]+)`/g, '<code class="md-inline-code">$1</code>');
 
     // Docs-style image layouts: Wrap Left, Wrap Right, or Draggable
-    line = line.replace(
+    s = s.replace(
       /!\[([^\]]*)\]\(([^)]+)\)\{(?:mode="([^"]*)")?(?:,\s*(?:x="[^"]*",\s*y="[^"]*",\s*)?w="([^"]*)")?[^}]*\}/g,
       (_, alt, src, mode, width) => {
         const wStyle = width ? `max-width: ${width}px; width: 100%;` : "";
@@ -1491,31 +1484,178 @@ export function renderMarkdownPreviewHtml(markdownText) {
     );
 
     // Standard inline markdown image
-    line = line.replace(
+    s = s.replace(
       /!\[([^\]]*)\]\(([^)]+)\)/g,
       '<div class="md-img-inline"><img src="$2" alt="$1" class="docs-rendered-img" /><span class="docs-img-caption">$1</span></div>'
     );
 
-    if (/^###\s+(.+)/.test(line)) {
-      return `<h3>${line.replace(/^###\s+/, "")}</h3>`;
+    // WikiLinks [[Target|Alias]] or [[Target]]
+    s = s.replace(
+      /\[\[([^\]|#]+?)(?:\|([^\]]+?))?\]\]/g,
+      (_, target, alias) => {
+        const slug = target
+          .trim()
+          .toLowerCase()
+          .replace(/[^\w\s-]/g, "")
+          .replace(/[\s_]+/g, "-");
+        const label = (alias || target).trim();
+        return `<a class="wikilink" data-slug="${slug}" href="#/notes/${slug}">[[${label}]]</a>`;
+      }
+    );
+
+    // Standard markdown link [Text](url)
+    s = s.replace(
+      /\[([^\]]+)\]\(([^)]+)\)/g,
+      '<a class="md-link" href="$2" target="_blank" rel="noopener noreferrer">$1</a>'
+    );
+
+    // Directives
+    s = s.replace(
+      /@(start|due|priority)\(([^)]+)\)/gi,
+      '<span class="directive-pill directive-$1">@$1($2)</span>'
+    );
+    s = s.replace(
+      /@milestone\b/gi,
+      '<span class="directive-pill directive-milestone">@milestone</span>'
+    );
+    s = s.replace(
+      /@habit\(([^,\)]+?)(?:,\s*([^\)]+?))?\)/gi,
+      '<span class="directive-pill directive-habit">@habit($1)</span>'
+    );
+
+    // Tags (e.g. #fastapi, #journal)
+    s = s.replace(
+      /(^|\s)#([a-zA-Z][a-zA-Z0-9_-]{1,49})\b/g,
+      '$1<span class="tag-pill">#$2</span>'
+    );
+
+    // Bold **text** or __text__
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+
+    // Italic *text* or _text_
+    s = s.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    s = s.replace(/(^|\s)_([^_]+)_(\s|$)/g, '$1<em>$2</em>$3');
+
+    // Strikethrough ~~text~~
+    s = s.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+
+    return s;
+  }
+
+  const lines = withCodeBlocksPlaceholders.split(/\r?\n/);
+  const out = [];
+  let inUl = false;
+  let inOl = false;
+
+  function closeLists() {
+    if (inUl) {
+      out.push("</ul>");
+      inUl = false;
     }
-    if (/^##\s+(.+)/.test(line)) {
-      return `<h2>${line.replace(/^##\s+/, "")}</h2>`;
+    if (inOl) {
+      out.push("</ol>");
+      inOl = false;
     }
-    if (/^#\s+(.+)/.test(line)) {
-      return `<h1>${line.replace(/^#\s+/, "")}</h1>`;
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i];
+    const trimmed = rawLine.trim();
+
+    // Codeblock placeholder
+    if (/^%%CODEBLOCK_\d+%%$/.test(trimmed)) {
+      closeLists();
+      out.push(trimmed);
+      continue;
     }
 
-    const taskMatch = line.match(/^\s*[-*]\s+\[([ xX])\]\s+(.+)$/);
+    // Blank line
+    if (!trimmed) {
+      closeLists();
+      continue;
+    }
+
+    // Horizontal Rule: ---, ***, ___
+    if (/^(?:---|[*]{3}|_{3})\s*$/.test(trimmed)) {
+      closeLists();
+      out.push('<hr class="md-hr" />');
+      continue;
+    }
+
+    // Headings: Supports optional space after #, e.g. #Heading, # Heading, ##3:39 PM, ## 3:39 PM, etc.
+    const headingMatch = rawLine.match(/^\s*(#{1,6})\s*(.+)$/);
+    if (headingMatch) {
+      closeLists();
+      const level = headingMatch[1].length;
+      const content = formatInline(headingMatch[2].trim());
+      out.push(`<h${level}>${content}</h${level}>`);
+      continue;
+    }
+
+    // Blockquote: > quote
+    const bqMatch = rawLine.match(/^\s*>\s*(.+)$/);
+    if (bqMatch) {
+      closeLists();
+      out.push(`<blockquote><p>${formatInline(bqMatch[1].trim())}</p></blockquote>`);
+      continue;
+    }
+
+    // Task Checklist: - [ ] or - [x] or * [ ]
+    const taskMatch = rawLine.match(/^\s*[-*+]\s+\[([ xX])\]\s+(.+)$/);
     if (taskMatch) {
+      closeLists();
       const checked = taskMatch[1].toLowerCase() === "x";
-      return `<div class="md-task-row ${checked ? "is-done" : ""}"><input type="checkbox" ${
-        checked ? "checked" : ""
-      } readonly /><span>${taskMatch[2]}</span></div>`;
+      const taskText = formatInline(taskMatch[2].trim());
+      out.push(
+        `<div class="md-task-row ${checked ? "is-done" : ""}"><input type="checkbox" ${
+          checked ? "checked" : ""
+        } readonly /><span>${taskText}</span></div>`
+      );
+      continue;
     }
 
-    return line ? `<p>${line}</p>` : "";
-  });
+    // Unordered list item: - item or * item
+    const ulMatch = rawLine.match(/^\s*[-*+]\s+(.+)$/);
+    if (ulMatch) {
+      if (inOl) {
+        out.push("</ol>");
+        inOl = false;
+      }
+      if (!inUl) {
+        out.push('<ul class="md-list">');
+        inUl = true;
+      }
+      out.push(`<li>${formatInline(ulMatch[1].trim())}</li>`);
+      continue;
+    }
 
-  return htmlLines.filter(Boolean).join("\n");
+    // Ordered list item: 1. item
+    const olMatch = rawLine.match(/^\s*(\d+)\.\s+(.+)$/);
+    if (olMatch) {
+      if (inUl) {
+        out.push("</ul>");
+        inUl = false;
+      }
+      if (!inOl) {
+        out.push('<ol class="md-list">');
+        inOl = true;
+      }
+      out.push(`<li>${formatInline(olMatch[2].trim())}</li>`);
+      continue;
+    }
+
+    // Regular paragraph line
+    closeLists();
+    out.push(`<p>${formatInline(trimmed)}</p>`);
+  }
+
+  closeLists();
+
+  let result = out.join("\n");
+  for (let idx = 0; idx < codeBlocks.length; idx++) {
+    result = result.replace(`%%CODEBLOCK_${idx}%%`, codeBlocks[idx]);
+  }
+
+  return result;
 }

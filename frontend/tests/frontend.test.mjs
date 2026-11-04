@@ -205,6 +205,28 @@ See [[Database Spec|DB Schema]] for #fastapi details.
   assert.ok(html.includes('class="md-task-row is-done"'));
 });
 
+test("Markdown preview renderer formats headings with or without spaces, lists, bold, italics, and links", () => {
+  const journalMd = [
+    "##3:39 PM",
+    "Did some **tutoring** today. *Yahoo!*",
+    "2 people so its more money, [Rates](https://rates.example.com).",
+    "- Tutoring prep",
+    "- Follow-up notes",
+    "> Reflection quote",
+    "`const salary = 1000;`",
+  ].join("\n");
+  const html = renderMarkdownPreviewHtml(journalMd);
+  assert.ok(html.includes("<h2>3:39 PM</h2>"));
+  assert.ok(html.includes("<strong>tutoring</strong>"));
+  assert.ok(html.includes("<em>Yahoo!</em>"));
+  assert.ok(html.includes('<a class="md-link" href="https://rates.example.com" target="_blank" rel="noopener noreferrer">Rates</a>'));
+  assert.ok(html.includes('<ul class="md-list">'));
+  assert.ok(html.includes('<li>Tutoring prep</li>'));
+  assert.ok(html.includes("<blockquote><p>Reflection quote</p></blockquote>"));
+  assert.ok(html.includes('<code class="md-inline-code">const salary = 1000;</code>'));
+});
+
+
 test("Roadmap swimlane card packer assigns codes (A1, A2) and stacks overlapping day cards into sub-rows", () => {
   const tasks = [
     { id: 1, title: "Hero seed world", start_date: "2026-11-01", due_date: "2026-11-02", is_milestone: false },

@@ -4440,3 +4440,162 @@ body {
 .picker-row.is-inbox-row {
   margin-bottom: 8px;
 }
+
+
+/* Markdown Prose & Typography */
+.journal-rendered-prose h1,
+.rendered-markdown-content h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 1.4rem 0 0.6rem;
+  color: var(--text-dark);
+  line-height: 1.25;
+}
+
+.journal-rendered-prose h1:first-child,
+.rendered-markdown-content h1:first-child {
+  margin-top: 0;
+}
+
+.journal-rendered-prose h2,
+.rendered-markdown-content h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 1.2rem 0 0.5rem;
+  color: var(--text-dark);
+  line-height: 1.3;
+}
+
+.journal-rendered-prose h2:first-child,
+.rendered-markdown-content h2:first-child {
+  margin-top: 0;
+}
+
+.journal-rendered-prose h3,
+.rendered-markdown-content h3 {
+  font-size: 1.08rem;
+  font-weight: 600;
+  margin: 1rem 0 0.4rem;
+  color: var(--text-dark);
+  line-height: 1.35;
+}
+
+.journal-rendered-prose h4,
+.journal-rendered-prose h5,
+.journal-rendered-prose h6,
+.rendered-markdown-content h4,
+.rendered-markdown-content h5,
+.rendered-markdown-content h6 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0.8rem 0 0.35rem;
+  color: var(--text-dark);
+}
+
+.journal-rendered-prose p,
+.rendered-markdown-content p {
+  margin: 0 0 0.75rem;
+  line-height: 1.68;
+}
+
+.journal-rendered-prose p:last-child,
+.rendered-markdown-content p:last-child {
+  margin-bottom: 0;
+}
+
+.journal-rendered-prose blockquote,
+.rendered-markdown-content blockquote {
+  margin: 0.8rem 0;
+  padding: 8px 16px;
+  border-left: 3px solid var(--primary-orange);
+  background: var(--primary-orange-soft);
+  border-radius: 0 6px 6px 0;
+  color: var(--text-body);
+}
+
+.journal-rendered-prose blockquote p,
+.rendered-markdown-content blockquote p {
+  margin: 0;
+}
+
+.journal-rendered-prose hr.md-hr,
+.rendered-markdown-content hr.md-hr {
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  margin: 1.2rem 0;
+}
+
+.journal-rendered-prose ul.md-list,
+.journal-rendered-prose ol.md-list,
+.rendered-markdown-content ul.md-list,
+.rendered-markdown-content ol.md-list {
+  margin: 0.4rem 0 0.75rem 1.4rem;
+  padding: 0;
+}
+
+.journal-rendered-prose li,
+.rendered-markdown-content li {
+  margin-bottom: 0.25rem;
+  line-height: 1.55;
+}
+
+.md-task-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 4px 0;
+  line-height: 1.5;
+}
+
+.md-task-row input[type="checkbox"] {
+  accent-color: var(--primary-orange);
+  cursor: default;
+  margin: 0;
+  position: relative;
+  top: 1px;
+}
+
+.md-task-row.is-done {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.md-inline-code {
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 1.5px 5px;
+  color: var(--primary-orange);
+}
+
+.md-code-block {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  background: #1e293b;
+  color: #f8fafc;
+  border-radius: 6px;
+  padding: 12px 14px;
+  margin: 0.8rem 0;
+  overflow-x: auto;
+  line-height: 1.5;
+}
+
+.md-code-block code {
+  font-family: inherit;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  border: none;
+}
+
+.md-link {
+  color: var(--primary-orange);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.md-link:hover {
+  color: #c2410c;
+}
