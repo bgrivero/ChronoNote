@@ -1,409 +1,450 @@
 <template>
-  <div ref="overlayRef" class="journal-draggables-layer" aria-label="Journal Draggable Elements Layer">
-    <!-- 1. Floating Images -->
+  <div
+    ref="overlayRef"
+    class="journal-draggables-layer"
+    :class="{ 'is-interactive': mediaEditing }"
+    aria-label="Journal media layer"
+    :aria-hidden="!mediaEditing"
+    @click.stop="clearSelection"
+  >
     <div
       v-for="img in images"
       :key="img.id"
       class="draggable-image-card"
       :class="{ 'is-selected': selectedElementId === img.id }"
       :style="getImageStyle(img)"
-      @mousedown="startDragImage($event, img)"
-      @touchstart="startDragImage($event, img)"
-      @click.stop="selectedElementId = img.id"
+      @mousedown.stop="startDragImage($event, img)"
+      @touchstart.stop="startDragImage($event, img)"
+      @click.stop="selectElement(img.id)"
     >
-      <!-- Action Controls Bar -->
-      <div class="image-actions-bar" @mousedown.stop @touchstart.stop>
-        <span class="mode-badge">{{ img.mode === 'draggable' ? 'Draggable' : img.mode }}</span>
-        <button
-          type="button"
-          class="img-btn-action"
-          title="Switch to Inline text"
-          @click="$emit('change-image-mode', { id: img.id, mode: 'inline' })"
-        >
-          Inline
-        </button>
-        <button
-          type="button"
-          class="img-btn-action"
-          title="Wrap text left"
-          @click="$emit('change-image-mode', { id: img.id, mode: 'wrap_left' })"
-        >
-          Wrap
-        </button>
-        <button
-          type="button"
-          class="img-btn-action"
-          title="View in Lightbox"
-          @click="$emit('view-lightbox', img.url)"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          class="img-btn-action delete-btn"
-          title="Delete image"
-          @click="$emit('delete-image', img)"
-        >
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </button>
+      <div v-if="selectedElementId === img.id" class="image-actions-bar" @mousedown.stop @touchstart.stop>
+        <span class="mode-badge">Image</span>
+        <button type="button" class="img-btn-action" title="Switch to inline text" @click="$emit('change-image-mode', { id: img.id, mode: 'inline' })">Inline</button>
+        <button type="button" class="img-btn-action delete-btn" title="Delete image" @click="$emit('delete-image', img)">Remove</button>
       </div>
 
-      <!-- Main Image Display -->
       <div class="image-inner-frame">
-        <img
-          :src="img.url"
-          :alt="img.caption || 'Journal Image'"
-          class="docs-draggable-img"
-          draggable="false"
-        />
+        <img :src="img.url" :alt="img.caption || 'Journal image'" class="docs-draggable-img" draggable="false" />
         <span v-if="img.caption" class="image-caption">{{ img.caption }}</span>
       </div>
 
-      <!-- Bottom-Right Resize Grab Handle -->
       <div
+        v-if="selectedElementId === img.id"
+        class="rotate-handle image-rotate-handle"
+        title="Drag to rotate image"
+        @mousedown.stop="startRotateImage($event, img)"
+        @touchstart.stop="startRotateImage($event, img)"
+      >↻</div>
+      <div
+        v-if="selectedElementId === img.id"
+        class="resize-handle nw-handle"
+        title="Drag a corner to resize image"
+        @mousedown.stop="startResizeImage($event, img, -1)"
+        @touchstart.stop="startResizeImage($event, img, -1)"
+      />
+      <div
+        v-if="selectedElementId === img.id"
+        class="resize-handle ne-handle"
+        title="Drag a corner to resize image"
+        @mousedown.stop="startResizeImage($event, img, 1)"
+        @touchstart.stop="startResizeImage($event, img, 1)"
+      />
+      <div
+        v-if="selectedElementId === img.id"
+        class="resize-handle sw-handle"
+        title="Drag a corner to resize image"
+        @mousedown.stop="startResizeImage($event, img, -1)"
+        @touchstart.stop="startResizeImage($event, img, -1)"
+      />
+      <div
+        v-if="selectedElementId === img.id"
         class="resize-handle se-handle"
-        title="Drag to resize width"
-        @mousedown.stop="startResizeImage($event, img)"
-        @touchstart.stop="startResizeImage($event, img)"
+        title="Drag a corner to resize image"
+        @mousedown.stop="startResizeImage($event, img, 1)"
+        @touchstart.stop="startResizeImage($event, img, 1)"
       />
     </div>
 
-    <!-- 2. Draggable & Resizable Stickers / Emotes -->
     <div
       v-for="stk in stickers"
       :key="stk.id"
       class="draggable-sticker-card"
       :class="{ 'is-selected': selectedElementId === `stk_${stk.id}` }"
       :style="getStickerStyle(stk)"
-      @mousedown="startDragSticker($event, stk)"
-      @touchstart="startDragSticker($event, stk)"
-      @click.stop="selectedElementId = `stk_${stk.id}`"
+      @mousedown.stop="startDragSticker($event, stk)"
+      @touchstart.stop="startDragSticker($event, stk)"
+      @click.stop="selectElement(`stk_${stk.id}`)"
     >
-      <!-- Sticker Controls (Visible on hover or select) -->
-      <div class="sticker-actions-pill" @mousedown.stop @touchstart.stop>
-        <button
-          type="button"
-          class="stk-action-btn"
-          title="Rotate sticker +15°"
-          @click="rotateSticker(stk)"
-        >
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="23 4 23 10 17 10" />
-            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          class="stk-action-btn stk-delete-btn"
-          title="Remove sticker"
-          @click="$emit('delete-sticker', stk.id)"
-        >
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </button>
+      <div v-if="selectedElementId === `stk_${stk.id}`" class="sticker-actions-panel" @mousedown.stop @touchstart.stop>
+        <button type="button" class="stk-action-btn stk-delete-btn" title="Remove sticker" @click="$emit('delete-sticker', stk.id)">Remove</button>
       </div>
 
-      <!-- Sticker Graphic -->
       <div class="sticker-art-wrap">
-        <img
-          :src="stk.image_url"
-          :alt="stk.sticker_name"
-          class="journal-sticker-img"
-          draggable="false"
-        />
+        <img :src="stk.image_url" :alt="stk.sticker_name" class="journal-sticker-img" draggable="false" />
       </div>
 
-      <!-- Bottom-Right Resize Handle for Sticker -->
-      <div
-        class="sticker-resize-handle"
-        title="Drag to resize sticker"
-        @mousedown.stop="startResizeSticker($event, stk)"
-        @touchstart.stop="startResizeSticker($event, stk)"
-      />
+      <div v-if="selectedElementId === `stk_${stk.id}`" class="rotate-handle sticker-rotate-handle" title="Drag to rotate sticker" @mousedown.stop="startRotateSticker($event, stk)" @touchstart.stop="startRotateSticker($event, stk)">↻</div>
+      <div v-if="selectedElementId === `stk_${stk.id}`" class="sticker-resize-handle nw-handle" title="Drag a corner to resize sticker" @mousedown.stop="startResizeSticker($event, stk, -1, -1)" @touchstart.stop="startResizeSticker($event, stk, -1, -1)" />
+      <div v-if="selectedElementId === `stk_${stk.id}`" class="sticker-resize-handle ne-handle" title="Drag a corner to resize sticker" @mousedown.stop="startResizeSticker($event, stk, 1, -1)" @touchstart.stop="startResizeSticker($event, stk, 1, -1)" />
+      <div v-if="selectedElementId === `stk_${stk.id}`" class="sticker-resize-handle sw-handle" title="Drag a corner to resize sticker" @mousedown.stop="startResizeSticker($event, stk, -1, 1)" @touchstart.stop="startResizeSticker($event, stk, -1, 1)" />
+      <div v-if="selectedElementId === `stk_${stk.id}`" class="sticker-resize-handle se-handle" title="Drag a corner to resize sticker" @mousedown.stop="startResizeSticker($event, stk, 1, 1)" @touchstart.stop="startResizeSticker($event, stk, 1, 1)" />
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from "vue";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { computeDraggableImageStyle } from "../composables/useDocsImages.js";
 import { computeStickerTransformStyle } from "../composables/useStickers.js";
 
 const props = defineProps({
-  images: {
-    type: Array,
-    default: () => [],
-  },
-  stickers: {
-    type: Array,
-    default: () => [],
-  },
+  images: { type: Array, default: () => [] },
+  stickers: { type: Array, default: () => [] },
+  mediaEditing: { type: Boolean, default: false },
 });
 
 const emit = defineEmits([
   "update-image",
   "change-image-mode",
   "delete-image",
-  "view-lightbox",
   "update-sticker",
   "delete-sticker",
 ]);
 
 const overlayRef = ref(null);
 const selectedElementId = ref(null);
+let activeImageDrag = null;
+let activeImageResize = null;
+let activeImageRotation = null;
+let activeStickerDrag = null;
+let activeStickerResize = null;
+let activeStickerRotation = null;
+
+watch(() => props.mediaEditing, (enabled) => {
+  if (!enabled) {
+    selectedElementId.value = null;
+    removeAllListeners();
+  }
+});
 
 function getImageStyle(img) {
   return computeDraggableImageStyle(img);
 }
 
-function getStickerStyle(stk) {
-  return computeStickerTransformStyle(stk);
+function getStickerStyle(sticker) {
+  return computeStickerTransformStyle(sticker);
 }
 
-// ---------------------------------------------------------------------------
-// Image Drag & Resize Handlers
-// ---------------------------------------------------------------------------
-let activeImageDrag = null;
-
-function startDragImage(e, img) {
-  selectedElementId.value = img.id;
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-  const rect = overlayRef.value ? overlayRef.value.getBoundingClientRect() : null;
-
-  activeImageDrag = {
-    imgId: img.id,
-    startX: clientX,
-    startY: clientY,
-    origX: img.x || 50,
-    origY: img.y || 20,
-    containerWidth: rect ? rect.width : window.innerWidth,
-  };
-
-  window.addEventListener("mousemove", onDraggingImage);
-  window.addEventListener("mouseup", stopDragImage);
-  window.addEventListener("touchmove", onDraggingImage, { passive: false });
-  window.addEventListener("touchend", stopDragImage);
+function selectElement(id) {
+  if (props.mediaEditing) selectedElementId.value = id;
 }
 
-function onDraggingImage(e) {
-  if (!activeImageDrag) return;
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+function clearSelection() {
+  selectedElementId.value = null;
+}
 
-  const dx = clientX - activeImageDrag.startX;
-  const dy = clientY - activeImageDrag.startY;
-
-  const percentDeltaX = (dx / (activeImageDrag.containerWidth || 800)) * 100;
-  const newX = Math.max(5, Math.min(95, Math.round(activeImageDrag.origX + percentDeltaX)));
-  const newY = Math.max(0, Math.round(activeImageDrag.origY + dy));
-
-  const target = props.images.find((i) => i.id === activeImageDrag.imgId);
-  if (target) {
-    target.x = newX;
-    target.y = newY;
+function clearSelectionOnOutsidePointer(event) {
+  if (props.mediaEditing && overlayRef.value && !overlayRef.value.contains(event.target)) {
+    clearSelection();
   }
+}
+
+function pointerPosition(event) {
+  const point = event.touches?.[0] || event.changedTouches?.[0] || event;
+  return { x: point.clientX, y: point.clientY };
+}
+
+function clamp(value, minimum, maximum) {
+  return Math.max(minimum, Math.min(maximum, Math.round(value)));
+}
+
+function preventTouchScroll(event) {
+  if (event.cancelable) event.preventDefault();
+}
+
+function addListeners(moveHandler, endHandler) {
+  window.addEventListener("mousemove", moveHandler);
+  window.addEventListener("mouseup", endHandler);
+  window.addEventListener("touchmove", moveHandler, { passive: false });
+  window.addEventListener("touchend", endHandler);
+  window.addEventListener("touchcancel", endHandler);
+}
+
+function removeListeners(moveHandler, endHandler) {
+  window.removeEventListener("mousemove", moveHandler);
+  window.removeEventListener("mouseup", endHandler);
+  window.removeEventListener("touchmove", moveHandler);
+  window.removeEventListener("touchend", endHandler);
+  window.removeEventListener("touchcancel", endHandler);
+}
+
+function removeAllListeners() {
+  removeListeners(onDraggingImage, stopDragImage);
+  removeListeners(onResizingImage, stopResizeImage);
+  removeListeners(onRotatingImage, stopRotateImage);
+  removeListeners(onDraggingSticker, stopDragSticker);
+  removeListeners(onResizingSticker, stopResizeSticker);
+  removeListeners(onRotatingSticker, stopRotateSticker);
+  activeImageDrag = null;
+  activeImageResize = null;
+  activeImageRotation = null;
+  activeStickerDrag = null;
+  activeStickerResize = null;
+  activeStickerRotation = null;
+}
+
+function updateImage(img, changes) {
+  if (!props.mediaEditing) return;
+  Object.assign(img, changes);
+  emit("update-image", {
+    id: img.id,
+    x: img.x ?? 50,
+    y: img.y ?? 20,
+    width: img.width ?? 300,
+    rotation: img.rotation ?? 0,
+  });
+}
+
+function rotationAngle(event, card) {
+  const point = pointerPosition(event);
+  const rect = card.getBoundingClientRect();
+  return Math.atan2(point.y - (rect.top + rect.height / 2), point.x - (rect.left + rect.width / 2)) * (180 / Math.PI);
+}
+
+function normalizeRotation(degrees) {
+  const normalized = ((degrees + 180) % 360 + 360) % 360 - 180;
+  return Math.round(normalized);
+}
+
+function startRotateImage(event, img) {
+  if (!props.mediaEditing || event.button > 0) return;
+  preventTouchScroll(event);
+  const card = event.currentTarget.parentElement;
+  activeImageRotation = {
+    id: img.id,
+    startAngle: rotationAngle(event, card),
+    originalRotation: img.rotation ?? 0,
+    card,
+  };
+  addListeners(onRotatingImage, stopRotateImage);
+}
+
+function onRotatingImage(event) {
+  if (!activeImageRotation || !props.mediaEditing) return;
+  preventTouchScroll(event);
+  const target = props.images.find((image) => image.id === activeImageRotation.id);
+  if (!target) return;
+  target.rotation = normalizeRotation(
+    activeImageRotation.originalRotation + rotationAngle(event, activeImageRotation.card) - activeImageRotation.startAngle
+  );
+}
+
+function stopRotateImage() {
+  if (activeImageRotation) {
+    const target = props.images.find((image) => image.id === activeImageRotation.id);
+    if (target) updateImage(target, {});
+  }
+  activeImageRotation = null;
+  removeListeners(onRotatingImage, stopRotateImage);
+}
+
+function startDragImage(event, img) {
+  if (!props.mediaEditing || event.button > 0) return;
+  preventTouchScroll(event);
+  selectElement(img.id);
+  const point = pointerPosition(event);
+  const rect = overlayRef.value?.getBoundingClientRect();
+  activeImageDrag = {
+    id: img.id,
+    startX: point.x,
+    startY: point.y,
+    originalX: img.x ?? 50,
+    originalY: img.y ?? 20,
+    containerWidth: rect?.width || window.innerWidth,
+    containerHeight: rect?.height || window.innerHeight,
+  };
+  addListeners(onDraggingImage, stopDragImage);
+}
+
+function onDraggingImage(event) {
+  if (!activeImageDrag || !props.mediaEditing) return;
+  preventTouchScroll(event);
+  const point = pointerPosition(event);
+  const target = props.images.find((image) => image.id === activeImageDrag.id);
+  if (!target) return;
+  const x = activeImageDrag.originalX + ((point.x - activeImageDrag.startX) / activeImageDrag.containerWidth) * 100;
+  const y = activeImageDrag.originalY + point.y - activeImageDrag.startY;
+  target.x = clamp(x, 5, 95);
+  target.y = clamp(y, 0, Math.max(0, activeImageDrag.containerHeight - 40));
 }
 
 function stopDragImage() {
   if (activeImageDrag) {
-    const target = props.images.find((i) => i.id === activeImageDrag.imgId);
-    if (target) {
-      emit("update-image", { id: target.id, x: target.x, y: target.y, width: target.width });
-    }
+    const target = props.images.find((image) => image.id === activeImageDrag.id);
+    if (target) updateImage(target, {});
   }
   activeImageDrag = null;
-  window.removeEventListener("mousemove", onDraggingImage);
-  window.removeEventListener("mouseup", stopDragImage);
-  window.removeEventListener("touchmove", onDraggingImage);
-  window.removeEventListener("touchend", stopDragImage);
+  removeListeners(onDraggingImage, stopDragImage);
 }
 
-let activeImageResize = null;
-
-function startResizeImage(e, img) {
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+function startResizeImage(event, img, horizontalDirection) {
+  if (!props.mediaEditing || event.button > 0) return;
+  preventTouchScroll(event);
+  const point = pointerPosition(event);
   activeImageResize = {
-    imgId: img.id,
-    startX: clientX,
-    origWidth: img.width || 300,
+    id: img.id,
+    startX: point.x,
+    originalWidth: img.width ?? 300,
+    horizontalDirection,
   };
-
-  window.addEventListener("mousemove", onResizingImage);
-  window.addEventListener("mouseup", stopResizeImage);
-  window.addEventListener("touchmove", onResizingImage, { passive: false });
-  window.addEventListener("touchend", stopResizeImage);
+  addListeners(onResizingImage, stopResizeImage);
 }
 
-function onResizingImage(e) {
-  if (!activeImageResize) return;
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-  const dx = clientX - activeImageResize.startX;
-  const newWidth = Math.max(120, Math.min(800, Math.round(activeImageResize.origWidth + dx)));
-
-  const target = props.images.find((i) => i.id === activeImageResize.imgId);
-  if (target) {
-    target.width = newWidth;
-  }
+function onResizingImage(event) {
+  if (!activeImageResize || !props.mediaEditing) return;
+  preventTouchScroll(event);
+  const target = props.images.find((image) => image.id === activeImageResize.id);
+  if (!target) return;
+  target.width = clamp(
+    activeImageResize.originalWidth +
+      (pointerPosition(event).x - activeImageResize.startX) * activeImageResize.horizontalDirection,
+    120,
+    800
+  );
 }
 
 function stopResizeImage() {
   if (activeImageResize) {
-    const target = props.images.find((i) => i.id === activeImageResize.imgId);
-    if (target) {
-      emit("update-image", { id: target.id, x: target.x, y: target.y, width: target.width });
-    }
+    const target = props.images.find((image) => image.id === activeImageResize.id);
+    if (target) updateImage(target, {});
   }
   activeImageResize = null;
-  window.removeEventListener("mousemove", onResizingImage);
-  window.removeEventListener("mouseup", stopResizeImage);
-  window.removeEventListener("touchmove", onResizingImage);
-  window.removeEventListener("touchend", stopResizeImage);
+  removeListeners(onResizingImage, stopResizeImage);
 }
 
-// ---------------------------------------------------------------------------
-// Sticker Drag & Resize Handlers
-// ---------------------------------------------------------------------------
-let activeStickerDrag = null;
+function updateSticker(sticker, changes) {
+  if (!props.mediaEditing) return;
+  Object.assign(sticker, changes);
+  emit("update-sticker", {
+    id: sticker.id,
+    pos_x: sticker.pos_x ?? 50,
+    pos_y: sticker.pos_y ?? 50,
+    rotation_deg: sticker.rotation_deg ?? 0,
+    scale: sticker.scale ?? 100,
+  });
+}
 
-function startDragSticker(e, stk) {
-  selectedElementId.value = `stk_${stk.id}`;
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-  const rect = overlayRef.value ? overlayRef.value.getBoundingClientRect() : null;
-
-  activeStickerDrag = {
-    stkId: stk.id,
-    startX: clientX,
-    startY: clientY,
-    origX: stk.pos_x ?? 50,
-    origY: stk.pos_y ?? 50,
-    containerWidth: rect ? rect.width : 800,
-    containerHeight: rect ? rect.height : 600,
+function startRotateSticker(event, sticker) {
+  if (!props.mediaEditing || event.button > 0) return;
+  preventTouchScroll(event);
+  const card = event.currentTarget.parentElement;
+  activeStickerRotation = {
+    id: sticker.id,
+    startAngle: rotationAngle(event, card),
+    originalRotation: sticker.rotation_deg ?? 0,
+    card,
   };
-
-  window.addEventListener("mousemove", onDraggingSticker);
-  window.addEventListener("mouseup", stopDragSticker);
-  window.addEventListener("touchmove", onDraggingSticker, { passive: false });
-  window.addEventListener("touchend", stopDragSticker);
+  addListeners(onRotatingSticker, stopRotateSticker);
 }
 
-function onDraggingSticker(e) {
-  if (!activeStickerDrag) return;
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+function onRotatingSticker(event) {
+  if (!activeStickerRotation || !props.mediaEditing) return;
+  preventTouchScroll(event);
+  const target = props.stickers.find((sticker) => sticker.id === activeStickerRotation.id);
+  if (!target) return;
+  target.rotation_deg = normalizeRotation(
+    activeStickerRotation.originalRotation + rotationAngle(event, activeStickerRotation.card) - activeStickerRotation.startAngle
+  );
+}
 
-  const dx = clientX - activeStickerDrag.startX;
-  const dy = clientY - activeStickerDrag.startY;
-
-  const pctX = (dx / (activeStickerDrag.containerWidth || 800)) * 100;
-  const pctY = (dy / (activeStickerDrag.containerHeight || 600)) * 100;
-
-  const newX = Math.max(4, Math.min(96, Math.round(activeStickerDrag.origX + pctX)));
-  const newY = Math.max(4, Math.min(96, Math.round(activeStickerDrag.origY + pctY)));
-
-  const target = props.stickers.find((s) => s.id === activeStickerDrag.stkId);
-  if (target) {
-    target.pos_x = newX;
-    target.pos_y = newY;
+function stopRotateSticker() {
+  if (activeStickerRotation) {
+    const target = props.stickers.find((sticker) => sticker.id === activeStickerRotation.id);
+    if (target) updateSticker(target, {});
   }
+  activeStickerRotation = null;
+  removeListeners(onRotatingSticker, stopRotateSticker);
+}
+
+function startDragSticker(event, sticker) {
+  if (!props.mediaEditing || event.button > 0) return;
+  preventTouchScroll(event);
+  selectElement(`stk_${sticker.id}`);
+  const point = pointerPosition(event);
+  const rect = overlayRef.value?.getBoundingClientRect();
+  activeStickerDrag = {
+    id: sticker.id,
+    startX: point.x,
+    startY: point.y,
+    originalX: sticker.pos_x ?? 50,
+    originalY: sticker.pos_y ?? 50,
+    containerWidth: rect?.width || 800,
+    containerHeight: rect?.height || 600,
+  };
+  addListeners(onDraggingSticker, stopDragSticker);
+}
+
+function onDraggingSticker(event) {
+  if (!activeStickerDrag || !props.mediaEditing) return;
+  preventTouchScroll(event);
+  const point = pointerPosition(event);
+  const target = props.stickers.find((sticker) => sticker.id === activeStickerDrag.id);
+  if (!target) return;
+  target.pos_x = clamp(activeStickerDrag.originalX + ((point.x - activeStickerDrag.startX) / activeStickerDrag.containerWidth) * 100, 4, 96);
+  target.pos_y = clamp(activeStickerDrag.originalY + ((point.y - activeStickerDrag.startY) / activeStickerDrag.containerHeight) * 100, 4, 96);
 }
 
 function stopDragSticker() {
   if (activeStickerDrag) {
-    const target = props.stickers.find((s) => s.id === activeStickerDrag.stkId);
-    if (target) {
-      emit("update-sticker", {
-        id: target.id,
-        pos_x: target.pos_x,
-        pos_y: target.pos_y,
-        rotation_deg: target.rotation_deg,
-        scale: target.scale,
-      });
-    }
+    const target = props.stickers.find((sticker) => sticker.id === activeStickerDrag.id);
+    if (target) updateSticker(target, {});
   }
   activeStickerDrag = null;
-  window.removeEventListener("mousemove", onDraggingSticker);
-  window.removeEventListener("mouseup", stopDragSticker);
-  window.removeEventListener("touchmove", onDraggingSticker);
-  window.removeEventListener("touchend", stopDragSticker);
+  removeListeners(onDraggingSticker, stopDragSticker);
 }
 
-// Sticker Scale / Resize
-let activeStickerResize = null;
-
-function startResizeSticker(e, stk) {
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-
+function startResizeSticker(event, sticker, horizontalDirection, verticalDirection) {
+  if (!props.mediaEditing || event.button > 0) return;
+  preventTouchScroll(event);
+  const point = pointerPosition(event);
   activeStickerResize = {
-    stkId: stk.id,
-    startX: clientX,
-    startY: clientY,
-    origScale: stk.scale ?? 100,
+    id: sticker.id,
+    startX: point.x,
+    startY: point.y,
+    originalScale: sticker.scale ?? 100,
+    horizontalDirection,
+    verticalDirection,
   };
-
-  window.addEventListener("mousemove", onResizingSticker);
-  window.addEventListener("mouseup", stopResizeSticker);
-  window.addEventListener("touchmove", onResizingSticker, { passive: false });
-  window.addEventListener("touchend", stopResizeSticker);
+  addListeners(onResizingSticker, stopResizeSticker);
 }
 
-function onResizingSticker(e) {
-  if (!activeStickerResize) return;
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-
-  const dx = clientX - activeStickerResize.startX;
-  const dy = clientY - activeStickerResize.startY;
-  const delta = Math.round((dx + dy) / 2);
-
-  const newScale = Math.max(40, Math.min(260, activeStickerResize.origScale + delta));
-  const target = props.stickers.find((s) => s.id === activeStickerResize.stkId);
-  if (target) {
-    target.scale = newScale;
-  }
+function onResizingSticker(event) {
+  if (!activeStickerResize || !props.mediaEditing) return;
+  preventTouchScroll(event);
+  const point = pointerPosition(event);
+  const target = props.stickers.find((sticker) => sticker.id === activeStickerResize.id);
+  if (!target) return;
+  const distance =
+    ((point.x - activeStickerResize.startX) * activeStickerResize.horizontalDirection +
+      (point.y - activeStickerResize.startY) * activeStickerResize.verticalDirection) /
+    2;
+  target.scale = clamp(activeStickerResize.originalScale + distance, 40, 260);
 }
 
 function stopResizeSticker() {
   if (activeStickerResize) {
-    const target = props.stickers.find((s) => s.id === activeStickerResize.stkId);
-    if (target) {
-      emit("update-sticker", {
-        id: target.id,
-        pos_x: target.pos_x,
-        pos_y: target.pos_y,
-        rotation_deg: target.rotation_deg,
-        scale: target.scale,
-      });
-    }
+    const target = props.stickers.find((sticker) => sticker.id === activeStickerResize.id);
+    if (target) updateSticker(target, {});
   }
   activeStickerResize = null;
-  window.removeEventListener("mousemove", onResizingSticker);
-  window.removeEventListener("mouseup", stopResizeSticker);
-  window.removeEventListener("touchmove", onResizingSticker);
-  window.removeEventListener("touchend", stopResizeSticker);
+  removeListeners(onResizingSticker, stopResizeSticker);
 }
 
-function rotateSticker(stk) {
-  const newRot = ((stk.rotation_deg || 0) + 15) % 360;
-  stk.rotation_deg = newRot > 180 ? newRot - 360 : newRot;
-  emit("update-sticker", {
-    id: stk.id,
-    pos_x: stk.pos_x,
-    pos_y: stk.pos_y,
-    rotation_deg: stk.rotation_deg,
-    scale: stk.scale,
-  });
-}
+onMounted(() => window.addEventListener("pointerdown", clearSelectionOnOutsidePointer));
+onBeforeUnmount(() => {
+  removeAllListeners();
+  window.removeEventListener("pointerdown", clearSelectionOnOutsidePointer);
+});
 </script>
 
 <style scoped>
@@ -412,34 +453,45 @@ function rotateSticker(stk) {
   inset: 0;
   pointer-events: none;
   overflow: visible;
-  z-index: 25;
+  z-index: 50;
 }
 
-/* --------------------------------------------------------------------------
-   Draggable Image Card
-   -------------------------------------------------------------------------- */
-.draggable-image-card {
-  pointer-events: auto;
+.journal-draggables-layer.is-interactive {
+  pointer-events: none;
+}
+
+.draggable-image-card,
+.draggable-sticker-card {
+  pointer-events: none;
   user-select: none;
+  touch-action: none;
+}
+
+.journal-draggables-layer.is-interactive .draggable-image-card,
+.journal-draggables-layer.is-interactive .draggable-sticker-card {
+  pointer-events: auto;
+}
+
+.draggable-image-card {
   background: #ffffff;
   padding: 8px 8px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 8px;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(0, 0, 0, 0.08);
   transition: box-shadow 0.15s ease;
 }
 
-.draggable-image-card:hover,
 .draggable-image-card.is-selected {
   box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15), 0 0 0 2px var(--primary-orange, #ea580c);
 }
 
-.image-actions-bar {
+.image-actions-bar,
+.sticker-actions-panel {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   margin-bottom: 6px;
-  padding: 2px 4px;
+  padding: 5px 6px;
   background: var(--bg-hover, #f8fafc);
   border-radius: 6px;
   font-size: 0.72rem;
@@ -447,164 +499,95 @@ function rotateSticker(stk) {
 
 .mode-badge {
   font-size: 0.68rem;
-  font-weight: 600;
+  font-weight: 700;
   color: #4b5563;
-  margin-right: auto;
 }
 
-.img-btn-action {
-  padding: 2px 6px;
-  font-size: 0.68rem;
+.img-btn-action,
+.stk-action-btn {
   border: 1px solid #e2e8f0;
   background: #ffffff;
-  border-radius: 4px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
   color: #475569;
-  transition: all 0.1s ease;
-}
-
-.img-btn-action:hover {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
-  color: #0f172a;
-}
-
-.img-btn-action.delete-btn:hover {
-  background: #fee2e2;
-  color: #dc2626;
-  border-color: #fca5a5;
-}
-
-.image-inner-frame {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.docs-draggable-img {
-  width: 100%;
-  height: auto;
   border-radius: 4px;
-  display: block;
+  padding: 3px 6px;
+  font-size: 0.68rem;
+  cursor: pointer;
 }
 
-.image-caption {
-  font-size: 0.74rem;
-  font-family: var(--font-serif, Georgia, serif);
-  font-style: italic;
-  color: #64748b;
-  margin-top: 6px;
-  text-align: center;
-}
+.img-btn-action:hover,
+.stk-action-btn:hover { background: #f1f5f9; color: #0f172a; }
+.img-btn-action.delete-btn:hover,
+.stk-delete-btn:hover { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
 
-.resize-handle {
+.image-inner-frame { display: flex; flex-direction: column; align-items: center; }
+.docs-draggable-img { width: 100%; height: auto; border-radius: 4px; display: block; }
+.image-caption { margin-top: 6px; color: #64748b; font-family: var(--font-serif, Georgia, serif); font-size: 0.74rem; font-style: italic; text-align: center; }
+
+.resize-handle,
+.sticker-resize-handle {
   position: absolute;
-  bottom: 0;
-  right: 0;
-  width: 14px;
-  height: 14px;
-  cursor: se-resize;
+  width: 18px;
+  height: 18px;
   background: var(--primary-orange, #ea580c);
-  border-radius: 3px 0 7px 0;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 
-/* --------------------------------------------------------------------------
-   Draggable Sticker Card
-   -------------------------------------------------------------------------- */
+.nw-handle { top: -7px; left: -7px; cursor: nw-resize; }
+.ne-handle { top: -7px; right: -7px; cursor: ne-resize; }
+.sw-handle { bottom: -7px; left: -7px; cursor: sw-resize; }
+.se-handle { right: -7px; bottom: -7px; cursor: se-resize; }
+
+.rotate-handle {
+  position: absolute;
+  z-index: 35;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  background: var(--primary-orange, #ea580c);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
+  color: #ffffff;
+  cursor: grab;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.rotate-handle:active { cursor: grabbing; }
+.image-rotate-handle { top: -14px; right: -14px; }
+.sticker-rotate-handle { top: -14px; left: -14px; }
+
 .draggable-sticker-card {
-  pointer-events: auto;
-  user-select: none;
+  position: absolute;
   cursor: move;
   filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.12));
-  transition: filter 0.15s ease, outline 0.15s ease;
-  position: absolute;
 }
 
-.draggable-sticker-card:hover,
 .draggable-sticker-card.is-selected {
   filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.18));
-  outline: 1.5px dashed var(--primary-orange, #ea580c);
+  outline: 2px dashed var(--primary-orange, #ea580c);
   border-radius: 6px;
 }
 
-.sticker-actions-pill {
+.sticker-actions-panel {
   position: absolute;
-  top: -22px;
-  right: -8px;
-  display: none;
-  align-items: center;
-  gap: 3px;
-  background: rgba(28, 25, 23, 0.88);
-  backdrop-filter: blur(4px);
-  padding: 2px 4px;
-  border-radius: 999px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  top: -38px;
+  right: -14px;
   z-index: 30;
+  margin: 0;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
 }
 
-.draggable-sticker-card:hover .sticker-actions-pill,
-.draggable-sticker-card.is-selected .sticker-actions-pill {
-  display: flex;
-}
+.sticker-art-wrap { display: block; width: 68px; height: 68px; pointer-events: none; }
+.journal-sticker-img { width: 100%; height: 100%; object-fit: contain; display: block; pointer-events: none; }
 
-.stk-action-btn {
-  border: none;
-  background: transparent;
-  color: #ffffff;
-  padding: 2px 4px;
-  border-radius: 50%;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.65rem;
-  line-height: 1;
-  transition: background 0.1s ease;
-}
-
-.stk-action-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-.stk-action-btn.stk-delete-btn:hover {
-  background: #ef4444;
-}
-
-.sticker-art-wrap {
-  display: block;
-  width: 68px;
-  height: 68px;
-  pointer-events: none;
-}
-
-.journal-sticker-img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: block;
-  pointer-events: none;
-}
-
-.sticker-resize-handle {
-  position: absolute;
-  bottom: -4px;
-  right: -4px;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--primary-orange, #ea580c);
-  border: 1.5px solid #ffffff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
-  cursor: se-resize;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-
-.draggable-sticker-card:hover .sticker-resize-handle,
-.draggable-sticker-card.is-selected .sticker-resize-handle {
-  opacity: 1;
+@media (max-width: 700px) {
+  .image-actions-bar { flex-wrap: wrap; max-width: 250px; }
+  .sticker-actions-panel { right: auto; left: 0; width: auto; white-space: normal; }
 }
 </style>

@@ -243,6 +243,12 @@ body {
   color: var(--text-dark);
 }
 
+.btn-editorial-ghost.is-active {
+  background: var(--primary-orange-soft);
+  border-color: var(--primary-orange-border);
+  color: var(--primary-orange);
+}
+
 .btn-ocr-scanner {
   background: var(--secondary-cyan-soft);
   color: var(--secondary-cyan);
@@ -3445,6 +3451,13 @@ body {
 .journal-preview-paper:hover .journal-paper-status-badge {
   opacity: 1;
   color: var(--primary-orange);
+}
+
+.journal-drawer-paper-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
 }
 
 .journal-notepad-wrapper {

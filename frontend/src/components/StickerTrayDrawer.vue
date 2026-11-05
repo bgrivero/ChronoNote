@@ -161,12 +161,18 @@ const targetLabel = computed(() => {
   if (props.targetType === "calendar_date") {
     return `Date ${props.targetKey || props.activeDateIso}`;
   }
+  if (props.targetType === "journal") {
+    return `Journal ${props.targetKey || props.activeDateIso}`;
+  }
   return `Note: ${props.targetKey || "Current Note"}`;
 });
 
 const targetHint = computed(() => {
   if (props.targetType === "calendar_date") {
     return "the calendar day";
+  }
+  if (props.targetType === "journal") {
+    return "this journal entry";
   }
   return "this note";
 });

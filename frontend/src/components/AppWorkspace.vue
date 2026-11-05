@@ -187,6 +187,7 @@ const journalDraftTitle = ref("Journal — 2026-11-01");
 const journalDraftMd = ref(DEFAULT_DAILY_JOURNALS["2026-11-01"].content_md);
 const journalSaveStatus = ref(""); // '' | 'saving' | 'saved'
 const isEditingJournal = ref(false);
+const isJournalMediaEditing = ref(false);
 const journalTextareaRef = ref(null);
 const drawerJournalTextareaRef = ref(null);
 
@@ -204,6 +205,18 @@ function startEditingJournal(isDrawer = false) {
 async function stopEditingJournal() {
   isEditingJournal.value = false;
   await saveDailyJournalEntry();
+}
+
+async function toggleJournalMediaEditing() {
+  if (isEditingJournal.value) await stopEditingJournal();
+  isJournalMediaEditing.value = !isJournalMediaEditing.value;
+}
+
+async function openJournalStickerTray() {
+  if (isEditingJournal.value) await stopEditingJournal();
+  activeStickerTarget.value = { type: "journal", key: selectedJournalDate.value };
+  isStickerDrawerOpen.value = true;
+  await Promise.all([fetchStickers(), fetchStickerPlacements()]);
 }
 
 // Template Customization & Manager state
@@ -1800,7 +1813,7 @@ async function handleStampSticker(sticker) {
       stickerPlacements.value.push(created);
       showNotification({
         type: "success",
-        message: `Stamped ${sticker.name} onto ${target.type === 'calendar_date' ? target.key : 'note'}!`,
+        message: `Stamped ${sticker.name} onto ${target.type === "journal" ? "this journal" : target.type === "calendar_date" ? target.key : "this note"}!`,
       });
     }
   } catch (err) {
@@ -1832,14 +1845,13 @@ function getStickersForNote(noteKey) {
 }
 
 const journalStickers = computed(() => {
-  const dateKey = selectedJournalDate.value;
+  const dateKey = String(selectedJournalDate.value);
   const noteKey = activeNote.value?.id;
   return stickerPlacements.value.filter(
-    (p) =>
-      p.target_key === dateKey ||
-      (noteKey && String(p.target_key) === String(noteKey)) ||
-      (p.target_type === "calendar_date" && p.target_key === dateKey) ||
-      (p.target_type === "journal" && p.target_key === dateKey)
+    (placement) =>
+      (placement.target_type === "journal" && String(placement.target_key) === dateKey) ||
+      (placement.target_type === "calendar_date" && String(placement.target_key) === dateKey) ||
+      (noteKey && placement.target_type === "note" && String(placement.target_key) === String(noteKey))
   );
 });
 
@@ -1907,12 +1919,12 @@ async function handleUploadJournalImage(file, mode = "draggable") {
   }
 }
 
-function handleUpdateFloatingImage({ id, x, y, width }) {
+function handleUpdateFloatingImage({ id, x, y, width, rotation }) {
   const currentImages = journalFloatingImages.value;
   const target = currentImages.find((img) => img.id === id);
   if (!target) return;
 
-  const newTag = formatDocsImageMarkdown(target.caption, target.url, target.mode, x, y, width);
+  const newTag = formatDocsImageMarkdown(target.caption, target.url, target.mode, x, y, width, rotation);
   journalDraftMd.value = journalDraftMd.value.replace(target.rawDirective, newTag);
 }
 
@@ -1921,7 +1933,7 @@ function handleChangeFloatingImageMode({ id, mode }) {
   const target = currentImages.find((img) => img.id === id);
   if (!target) return;
 
-  const newTag = formatDocsImageMarkdown(target.caption, target.url, mode, target.x, target.y, target.width);
+  const newTag = formatDocsImageMarkdown(target.caption, target.url, mode, target.x, target.y, target.width, target.rotation);
   journalDraftMd.value = journalDraftMd.value.replace(target.rawDirective, newTag);
 }
 
@@ -3828,6 +3840,33 @@ onMounted(async () => {
             <button
               type="button"
               class="btn-editorial-ghost"
+              title="Choose a sticker to add to this journal"
+              @click="openJournalStickerTray"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 3a9 9 0 1 0 9 9c0-1.1-.9-2-2-2h-2a2 2 0 0 1-2-2V6c0-1.7-1.3-3-3-3Z" />
+                <circle cx="7.5" cy="11" r="1" />
+                <circle cx="10" cy="7.5" r="1" />
+              </svg>
+              <span>+ Sticker</span>
+            </button>
+            <button
+              type="button"
+              class="btn-editorial-ghost"
+              :class="{ 'is-active': isJournalMediaEditing }"
+              :title="isJournalMediaEditing ? 'Finish arranging journal media' : 'Arrange images and stickers'"
+              @click="toggleJournalMediaEditing"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 9V4h5" /><path d="M20 9V4h-5" />
+                <path d="M4 15v5h5" /><path d="M20 15v5h-5" />
+              </svg>
+              <span>{{ isJournalMediaEditing ? 'Done arranging' : 'Arrange media' }}</span>
+            </button>
+
+            <button
+              type="button"
+              class="btn-editorial-ghost"
               :title="hasJournalPassword ? 'Lock journal session now' : 'Set journal password'"
               @click="hasJournalPassword ? lockJournalSession() : (showJournalSettingsModal = true)"
             >
@@ -4029,6 +4068,16 @@ onMounted(async () => {
         </div>
 
         <div class="journal-paper-body">
+          <JournalDraggablesOverlay
+            :images="journalFloatingImages"
+            :stickers="journalStickers"
+            :media-editing="isJournalMediaEditing"
+            @update-image="handleUpdateFloatingImage"
+            @change-image-mode="handleChangeFloatingImageMode"
+            @delete-image="handleDeleteFloatingImage"
+            @update-sticker="handleUpdateStickerPlacement"
+            @delete-sticker="handleRemovePlacement"
+          />
           <!-- 1. Rendered Markdown View (Default) -->
           <div
             v-if="!isEditingJournal"
@@ -4041,16 +4090,6 @@ onMounted(async () => {
             title="Click to write or edit markdown"
             @click="startEditingJournal(false)"
           >
-            <!-- Draggable & Resizable Images & Stickers Overlay (Docs style) -->
-            <JournalDraggablesOverlay
-              :images="journalFloatingImages"
-              :stickers="journalStickers"
-              @update-image="handleUpdateFloatingImage"
-              @change-image-mode="handleChangeFloatingImageMode"
-              @delete-image="handleDeleteFloatingImage"
-              @update-sticker="handleUpdateStickerPlacement"
-              @delete-sticker="handleRemovePlacement"
-            />
             <div
               v-if="journalDraftMd && journalDraftMd.trim()"
               class="journal-rendered-prose"
@@ -4066,7 +4105,7 @@ onMounted(async () => {
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
               </svg>
-              <span>Click to edit markdown</span>
+              <span>{{ isJournalMediaEditing ? 'Arrange mode: select media to drag, resize, or rotate' : 'Click to edit markdown' }}</span>
             </div>
           </div>
 
@@ -5701,6 +5740,18 @@ onMounted(async () => {
             </button>
           </div>
 
+          <div class="journal-drawer-paper-body">
+            <JournalDraggablesOverlay
+              v-if="!isEditingJournal || isJournalMediaEditing"
+              :images="journalFloatingImages"
+              :stickers="journalStickers"
+              :media-editing="isJournalMediaEditing"
+              @update-image="handleUpdateFloatingImage"
+              @change-image-mode="handleChangeFloatingImageMode"
+              @delete-image="handleDeleteFloatingImage"
+              @update-sticker="handleUpdateStickerPlacement"
+              @delete-sticker="handleRemovePlacement"
+            />
           <!-- 1. Rendered Markdown View (Default) -->
           <div
             v-if="!isEditingJournal"
@@ -5709,16 +5760,6 @@ onMounted(async () => {
             title="Click to write or edit markdown"
             @click="startEditingJournal(true)"
           >
-            <!-- Draggable & Resizable Images & Stickers Overlay inside Drawer -->
-            <JournalDraggablesOverlay
-              :images="journalFloatingImages"
-              :stickers="journalStickers"
-              @update-image="handleUpdateFloatingImage"
-              @change-image-mode="handleChangeFloatingImageMode"
-              @delete-image="handleDeleteFloatingImage"
-              @update-sticker="handleUpdateStickerPlacement"
-              @delete-sticker="handleRemovePlacement"
-            />
             <div
               v-if="journalDraftMd && journalDraftMd.trim()"
               class="journal-rendered-prose"
@@ -5733,7 +5774,7 @@ onMounted(async () => {
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
               </svg>
-              <span>Click to edit markdown</span>
+              <span>{{ isJournalMediaEditing ? 'Arrange mode: select media to drag, resize, or rotate' : 'Click to edit markdown' }}</span>
             </div>
           </div>
 
@@ -5750,6 +5791,7 @@ onMounted(async () => {
             <div class="notepad-focusout-hint">
               <span>Markdown active &bull; Click outside or focus out to preview &amp; save</span>
             </div>
+          </div>
           </div>
         </div>
       </aside>
