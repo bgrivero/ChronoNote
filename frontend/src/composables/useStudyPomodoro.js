@@ -43,9 +43,18 @@ export function computeRemainingSeconds(targetTimestampMs, currentTimestampMs = 
   return Math.max(0, Math.round(diffMs / 1000));
 }
 
-export function formatStudyLogMarkdown(projectName, durationMinutes, intention = "", taskTitle = "") {
+export function formatStudyLogMarkdown(projectName, durationMinutes, intention = "", taskTitle = "", notes = "") {
   const projTag = projectName ? `[[${projectName}]]` : "General Study";
   const taskTag = taskTitle ? ` (${taskTitle})` : "";
   const intentTag = intention ? `: ${intention.trim()}` : "";
-  return `- [x] Focus (${durationMinutes}m) on ${projTag}${taskTag}${intentTag}`;
+  const bullet = `- [x] Focus (${durationMinutes}m) on ${projTag}${taskTag}${intentTag}`;
+  if (notes && notes.trim()) {
+    const formattedNotes = notes
+      .trim()
+      .split("\n")
+      .map((line) => (line.trim() ? `  > ${line}` : "  >"))
+      .join("\n");
+    return `${bullet}\n${formattedNotes}`;
+  }
+  return bullet;
 }

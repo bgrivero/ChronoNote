@@ -3,6 +3,7 @@
     ref="overlayRef"
     class="journal-draggables-layer"
     :class="{ 'is-interactive': mediaEditing }"
+    :style="{ transform: `translateY(${-scrollOffset}px)` }"
     aria-label="Journal media layer"
     :aria-hidden="!mediaEditing"
     @click.stop="clearSelection"
@@ -101,6 +102,7 @@ const props = defineProps({
   images: { type: Array, default: () => [] },
   stickers: { type: Array, default: () => [] },
   mediaEditing: { type: Boolean, default: false },
+  scrollOffset: { type: Number, default: 0 },
 });
 
 const emit = defineEmits([
@@ -454,6 +456,7 @@ onBeforeUnmount(() => {
   pointer-events: none;
   overflow: visible;
   z-index: 50;
+  will-change: transform;
 }
 
 .journal-draggables-layer.is-interactive {

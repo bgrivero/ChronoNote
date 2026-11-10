@@ -178,32 +178,66 @@ const dragDropPosition = ref("after"); // 'before' | 'after'
 const selectedProjectId = ref(null);
 const drawerTab = ref("subtasks"); // 'subtasks' | 'notes'
 
+function getSystemTodayIso() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 // Daily Journal Drawer / Active Date state
 // Clicking any date on Month View sets selectedJournalDate and opens the Journal Sheet!
-const selectedJournalDate = ref("2026-11-01");
+const selectedJournalDate = ref(getSystemTodayIso());
 const isJournalDrawerOpen = ref(false);
 const dailyJournalsMap = ref({ ...DEFAULT_DAILY_JOURNALS });
-const journalDraftTitle = ref("Journal — 2026-11-01");
-const journalDraftMd = ref(DEFAULT_DAILY_JOURNALS["2026-11-01"].content_md);
+const journalDraftTitle = ref(`Journal — ${getSystemTodayIso()}`);
+const journalDraftMd = ref(DEFAULT_DAILY_JOURNALS[getSystemTodayIso()]?.content_md || "");
+
+function navigateToDailyJournal(targetDate = null) {
+  const target = targetDate || getSystemTodayIso();
+  selectedJournalDate.value = target;
+  if (requestJournalAccess(target, false)) {
+    activePage.value = "journal";
+    openDailyJournalForDate(target, false);
+  }
+}
 const journalSaveStatus = ref(""); // '' | 'saving' | 'saved'
 const isEditingJournal = ref(false);
 const isJournalMediaEditing = ref(false);
+const journalMediaScrollTop = ref(0);
+const activeJournalSurface = ref("main");
 const journalTextareaRef = ref(null);
 const drawerJournalTextareaRef = ref(null);
+const journalPreviewRef = ref(null);
+const drawerJournalPreviewRef = ref(null);
+
+function handleJournalContentScroll(event) {
+  journalMediaScrollTop.value = event.target.scrollTop;
+}
 
 function startEditingJournal(isDrawer = false) {
+  activeJournalSurface.value = isDrawer ? "drawer" : "main";
+  const preview = isDrawer ? drawerJournalPreviewRef.value : journalPreviewRef.value;
+  journalMediaScrollTop.value = preview?.scrollTop ?? 0;
   isEditingJournal.value = true;
   nextTick(() => {
-    if (isDrawer) {
-      drawerJournalTextareaRef.value?.focus();
-    } else {
-      journalTextareaRef.value?.focus();
+    const textarea = isDrawer ? drawerJournalTextareaRef.value : journalTextareaRef.value;
+    if (textarea) {
+      textarea.scrollTop = journalMediaScrollTop.value;
+      textarea.focus();
     }
   });
 }
 
 async function stopEditingJournal() {
+  const isDrawer = activeJournalSurface.value === "drawer";
+  const textarea = isDrawer ? drawerJournalTextareaRef.value : journalTextareaRef.value;
+  journalMediaScrollTop.value = textarea?.scrollTop ?? journalMediaScrollTop.value;
   isEditingJournal.value = false;
+  await nextTick();
+  const preview = isDrawer ? drawerJournalPreviewRef.value : journalPreviewRef.value;
+  if (preview) preview.scrollTop = journalMediaScrollTop.value;
   await saveDailyJournalEntry();
 }
 
@@ -361,14 +395,6 @@ const newSubtask = ref({
 });
 
 // Calendar Timeline Controls
-function getSystemTodayIso() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
 const calendarScaleMode = ref("month");
 const todayIso = ref(getSystemTodayIso());
 const selectedYear = ref(new Date().getFullYear());
@@ -1686,9 +1712,53 @@ async function fetchWorkspaceNotes() {
 
 async function handleStudySessionCompleted(session) {
   if (session && session.auto_log_to_journal) {
-    const today = new Date().toISOString().split("T")[0];
-    await openDailyJournalForDate(today, false);
+    const sessionDate = session.session_date || getSystemTodayIso();
+    await openDailyJournalForDate(sessionDate, false);
+
+    // Refresh remote daily journals list
+    try {
+      const journalRes = await fetch(`${API_BASE}/journal`, {
+        headers: getAuthHeaders(),
+      });
+      if (journalRes.ok) {
+        const entries = await journalRes.json();
+        const nextMap = { ...dailyJournalsMap.value };
+        for (const entry of entries) {
+          if (entry.note_date) {
+            nextMap[entry.note_date] = entry;
+          }
+        }
+        dailyJournalsMap.value = nextMap;
+        persistLocalJournals();
+      }
+    } catch {}
+
+    // Offline / local fallback guarantee
+    const entry = dailyJournalsMap.value[sessionDate] || {
+      id: Date.now(),
+      title: `Journal — ${sessionDate}`,
+      note_date: sessionDate,
+      content_md: `# Journal — ${sessionDate}\n\n`,
+      is_daily_note: true,
+    };
+    const projLabel = session.project_name ? `[[${session.project_name}]]` : "General Study";
+    const bullet = `- [x] Focus (${session.duration_minutes}m) on ${projLabel}: ${session.intention || 'Focused interval'}`;
+    if (!entry.content_md.includes(bullet)) {
+      const formattedNotes = session.notes
+        ? "\n" + session.notes.split("\n").map((l) => (l.trim() ? `  > ${l}` : "  >")).join("\n")
+        : "";
+      entry.content_md = entry.content_md.trimEnd() + `\n${bullet}${formattedNotes}\n`;
+      dailyJournalsMap.value = {
+        ...dailyJournalsMap.value,
+        [sessionDate]: entry,
+      };
+      if (selectedJournalDate.value === sessionDate) {
+        journalDraftMd.value = entry.content_md;
+      }
+      persistLocalJournals();
+    }
   }
+  await fetchWorkspaceNotes();
   await fetchHabitsAndAnalytics();
 }
 
@@ -3172,12 +3242,7 @@ onMounted(async () => {
           type="button"
           class="page-tab-btn"
           :class="{ active: activePage === 'journal' }"
-          @click="
-            if (requestJournalAccess(selectedJournalDate, false)) {
-              activePage = 'journal';
-              openDailyJournalForDate(selectedJournalDate, false);
-            }
-          "
+          @click="navigateToDailyJournal()"
         >
           Daily Journal
           <span class="tab-count">{{ sortedJournalEntries.length }}</span>
@@ -4072,15 +4137,17 @@ onMounted(async () => {
             :images="journalFloatingImages"
             :stickers="journalStickers"
             :media-editing="isJournalMediaEditing"
+            :scroll-offset="journalMediaScrollTop"
             @update-image="handleUpdateFloatingImage"
             @change-image-mode="handleChangeFloatingImageMode"
             @delete-image="handleDeleteFloatingImage"
             @update-sticker="handleUpdateStickerPlacement"
             @delete-sticker="handleRemovePlacement"
           />
-          <!-- 1. Rendered Markdown View (Default) -->
+          <!-- Rendered Markdown View -->
           <div
             v-if="!isEditingJournal"
+            ref="journalPreviewRef"
             class="journal-preview-paper clickable-paper"
             :class="[
               { 'is-empty': !journalDraftMd || !journalDraftMd.trim() },
@@ -4088,6 +4155,7 @@ onMounted(async () => {
               getTypographyClass(customThemePrefs.typographyTheme),
             ]"
             title="Click to write or edit markdown"
+            @scroll="handleJournalContentScroll"
             @click="startEditingJournal(false)"
           >
             <div
@@ -4100,16 +4168,9 @@ onMounted(async () => {
               <p class="journal-placeholder-sub">Click anywhere to start writing in Markdown, or choose a template above.</p>
               <small class="journal-placeholder-hint">Supports headings, checklists <code>- [ ]</code>, #tags, [[WikiLinks]], and @habit(slug).</small>
             </div>
-            <div class="journal-paper-status-badge">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-              </svg>
-              <span>{{ isJournalMediaEditing ? 'Arrange mode: select media to drag, resize, or rotate' : 'Click to edit markdown' }}</span>
-            </div>
           </div>
 
-          <!-- 2. Notepad Textarea View (activated on focus/click; blur renders Markdown again & auto-saves) -->
+          <!-- Markdown Editor -->
           <div
             v-else
             class="journal-notepad-wrapper"
@@ -4124,13 +4185,22 @@ onMounted(async () => {
               class="journal-ruled-textarea live-journal-notepad"
               :placeholder="`Write your thoughts for ${formattedJournalHeading.full} in Markdown…`"
               spellcheck="false"
+              @scroll="handleJournalContentScroll"
               @blur="stopEditingJournal"
             />
             <div class="notepad-focusout-hint">
-              <span>Markdown active &bull; Click outside or focus out to preview &amp; save</span>
+              <span>Markdown active &bull; Click outside or focus out to save</span>
             </div>
           </div>
         </div>
+        <button
+          v-if="!isEditingJournal"
+          type="button"
+          class="journal-edit-cta"
+          @click="startEditingJournal(false)"
+        >
+          Click to edit markdown
+        </button>
       </section>
     </main>
 
@@ -4167,6 +4237,8 @@ onMounted(async () => {
         :notes="workspaceNotes"
         :tasks="allTasksList"
         :selected-journal-date="selectedJournalDate"
+        :api-base="API_BASE"
+        :get-auth-headers="getAuthHeaders"
         @session-completed="handleStudySessionCompleted"
         @note-updated="handleStudyNoteUpdated"
         @notify="showNotification"
@@ -5742,22 +5814,23 @@ onMounted(async () => {
 
           <div class="journal-drawer-paper-body">
             <JournalDraggablesOverlay
-              v-if="!isEditingJournal || isJournalMediaEditing"
               :images="journalFloatingImages"
               :stickers="journalStickers"
               :media-editing="isJournalMediaEditing"
+              :scroll-offset="journalMediaScrollTop"
               @update-image="handleUpdateFloatingImage"
               @change-image-mode="handleChangeFloatingImageMode"
               @delete-image="handleDeleteFloatingImage"
               @update-sticker="handleUpdateStickerPlacement"
               @delete-sticker="handleRemovePlacement"
             />
-          <!-- 1. Rendered Markdown View (Default) -->
           <div
             v-if="!isEditingJournal"
+            ref="drawerJournalPreviewRef"
             class="journal-preview-paper drawer-preview clickable-paper"
             :class="{ 'is-empty': !journalDraftMd || !journalDraftMd.trim() }"
             title="Click to write or edit markdown"
+            @scroll="handleJournalContentScroll"
             @click="startEditingJournal(true)"
           >
             <div
@@ -5769,16 +5842,8 @@ onMounted(async () => {
               <p class="journal-placeholder-heading">No journal entry recorded for this date.</p>
               <p class="journal-placeholder-sub">Click here to write in Markdown, or apply a template above.</p>
             </div>
-            <div class="journal-paper-status-badge">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-              </svg>
-              <span>{{ isJournalMediaEditing ? 'Arrange mode: select media to drag, resize, or rotate' : 'Click to edit markdown' }}</span>
-            </div>
           </div>
 
-          <!-- 2. Notepad Textarea View (activated on focus/click; blur renders Markdown & auto-saves) -->
           <div v-else class="journal-notepad-wrapper">
             <textarea
               ref="drawerJournalTextareaRef"
@@ -5786,10 +5851,11 @@ onMounted(async () => {
               class="journal-ruled-textarea live-journal-notepad"
               :placeholder="`Write down your notes for ${formattedJournalHeading.full}…`"
               spellcheck="false"
+              @scroll="handleJournalContentScroll"
               @blur="stopEditingJournal"
             />
             <div class="notepad-focusout-hint">
-              <span>Markdown active &bull; Click outside or focus out to preview &amp; save</span>
+              <span>Markdown active &bull; Click outside or focus out to save</span>
             </div>
           </div>
           </div>
@@ -6629,10 +6695,7 @@ onMounted(async () => {
         :class="{ active: activePage === 'journal' || isJournalDrawerOpen }"
         @click="
           isJournalDrawerOpen = false;
-          if (requestJournalAccess(selectedJournalDate, false)) {
-            activePage = 'journal';
-            openDailyJournalForDate(selectedJournalDate, false);
-          }
+          navigateToDailyJournal();
         "
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">

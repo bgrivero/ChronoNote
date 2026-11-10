@@ -834,9 +834,22 @@ test("Study Pomodoro interval cycling and markdown auto-log bullet generation", 
   assert.equal(step4.nextMode, "long_break");
   assert.equal(step4.completedCount, 4);
 
-  // Markdown log bullet
+  // Markdown log bullet without notes
   const bullet = formatStudyLogMarkdown("Neuroscience", 25, "Read chapter 3", "Slides");
   assert.equal(bullet, "- [x] Focus (25m) on [[Neuroscience]] (Slides): Read chapter 3");
+
+  // Markdown log bullet with multi-line notes
+  const bulletWithNotes = formatStudyLogMarkdown(
+    "Quantum Computing",
+    25,
+    "Study Grover Search",
+    "Algorithms",
+    "Key Takeaway: Quadratic speedup\nQuestion to resolve: Error rate"
+  );
+  assert.equal(
+    bulletWithNotes,
+    "- [x] Focus (25m) on [[Quantum Computing]] (Algorithms): Study Grover Search\n  > Key Takeaway: Quadratic speedup\n  > Question to resolve: Error rate"
+  );
 });
 
 test("Study Pomodoro wall-clock time remaining prevents background tab throttling drift", () => {

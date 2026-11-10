@@ -1143,15 +1143,35 @@ body {
 }
 
 .journal-paper-body {
+  --journal-viewport-height: 416px;
   position: relative;
   display: flex;
   flex-direction: column;
-  flex: 1;
+  flex: 0 0 var(--journal-viewport-height);
+  height: var(--journal-viewport-height);
+  min-height: var(--journal-viewport-height);
+  overflow: hidden;
+}
+
+.journal-edit-cta {
+  align-self: flex-end;
+  padding: 5px 2px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.73rem;
+}
+
+.journal-edit-cta:hover {
+  color: var(--primary-orange);
+  text-decoration: underline;
 }
 
 .journal-ruled-textarea {
   width: 100%;
-  min-height: 416px;
+  height: 100%;
+  min-height: 0;
   padding: 6px 20px 26px 20px;
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
@@ -1168,7 +1188,7 @@ body {
   font-family: var(--font-sans);
   font-size: 16px;
   line-height: 32px;
-  resize: vertical;
+  resize: none;
 }
 
 .journal-ruled-textarea:focus {
@@ -2855,10 +2875,17 @@ body {
 }
 
 .notepad-focusout-hint {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  z-index: 2;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
   font-size: 0.73rem;
   color: var(--text-muted);
+  pointer-events: none;
   text-align: right;
-  padding-right: 4px;
 }
 
 .directive-pill {
@@ -3383,8 +3410,10 @@ body {
 /* Journal Click-to-Focus Markdown & Preview Default */
 .journal-preview-paper {
   position: relative;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
   cursor: pointer;
-  min-height: 416px;
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
   background-color: var(--bg-elevated);
@@ -3397,7 +3426,7 @@ body {
 }
 
 .journal-preview-paper.drawer-preview {
-  min-height: 340px;
+  min-height: 0;
 }
 
 .journal-preview-paper.is-empty {
@@ -3454,22 +3483,35 @@ body {
 }
 
 .journal-drawer-paper-body {
+  --journal-viewport-height: 416px;
   position: relative;
   display: flex;
   flex-direction: column;
   width: 100%;
+  height: var(--journal-viewport-height);
+  min-height: var(--journal-viewport-height);
+  overflow: hidden;
 }
 
 .journal-notepad-wrapper {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  height: 100%;
+  min-height: 0;
+  gap: 0;
   width: 100%;
 }
 
 .live-journal-notepad {
   border: 1.5px solid var(--primary-orange) !important;
   box-shadow: 0 0 0 2px var(--primary-orange-pill);
+}
+
+.journal-ruled-textarea.is-readonly {
+  border: 1px solid var(--border-subtle) !important;
+  box-shadow: none;
+  cursor: pointer;
 }
 
 /* Template Customization Manager Modal */

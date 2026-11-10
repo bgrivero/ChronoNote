@@ -2491,13 +2491,21 @@ def create_study_session(
         intent_label = f": {payload.intention.strip()}" if payload.intention.strip() else ""
         bullet = f"- [x] Focus ({payload.duration_minutes}m) on {proj_label}{task_label}{intent_label}"
 
-        if bullet not in (daily_note.content_md or ""):
-            new_content = (daily_note.content_md or "").rstrip() + f"\n{bullet}\n"
-            daily_note.content_md = new_content
-            parsed = parse_markdown_note(new_content)
-            daily_note.frontmatter_json = json.dumps(parsed.frontmatter)
-            daily_note.tags_json = json.dumps(parsed.tags)
-            db.commit()
+        session_notes = payload.notes.strip()
+        if session_notes:
+            notes_lines = session_notes.splitlines()
+            formatted_notes = "\n".join(f"  > {line}" if line.strip() else "  >" for line in notes_lines)
+            entry_block = f"{bullet}\n{formatted_notes}"
+        else:
+            entry_block = bullet
+
+        existing_content = daily_note.content_md or ""
+        new_content = existing_content.rstrip() + f"\n{entry_block}\n"
+        daily_note.content_md = new_content
+        parsed = parse_markdown_note(new_content)
+        daily_note.frontmatter_json = json.dumps(parsed.frontmatter)
+        daily_note.tags_json = json.dumps(parsed.tags)
+        db.commit()
 
     # Sync habit if slug matches
     target_slug = payload.sync_habit_slug or "study"

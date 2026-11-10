@@ -368,6 +368,14 @@ const props = defineProps({
     type: String,
     default: () => new Date().toISOString().split("T")[0],
   },
+  apiBase: {
+    type: String,
+    default: "/api",
+  },
+  getAuthHeaders: {
+    type: Function,
+    default: () => ({}),
+  },
 });
 
 const emit = defineEmits(["session-completed", "note-updated", "notify"]);
@@ -511,9 +519,13 @@ async function saveCurrentStudyNote() {
   isSavingNote.value = true;
   try {
     if (activeNote.value) {
-      const res = await fetch(`/api/notes/${activeNote.value.id}`, {
+      const headers = {
+        "Content-Type": "application/json",
+        ...props.getAuthHeaders(),
+      };
+      const res = await fetch(`${props.apiBase}/notes/${activeNote.value.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ content_md: activeNoteContent.value }),
       });
       if (res.ok) {
@@ -534,10 +546,7 @@ async function saveCurrentStudyNote() {
 
 // Timer Controls
 function switchMode(mode) {
-  isRunning.value = false;
-  clearInterval(timerInterval);
-  timerInterval = null;
-  targetEndTime = null;
+  pauseTimer();
   activeMode.value = mode;
   if (mode === "focus") {
     secondsRemaining.value = focusDurationMin.value * 60;
@@ -557,10 +566,12 @@ function toggleTimer() {
 }
 
 function syncTimerWithTarget() {
-  if (!targetEndTime) return;
+  if (!targetEndTime || !isRunning.value) return;
   const remaining = computeRemainingSeconds(targetEndTime);
   secondsRemaining.value = remaining;
   if (remaining <= 0) {
+    secondsRemaining.value = 0;
+    pauseTimer();
     onIntervalComplete();
   }
 }
@@ -571,7 +582,10 @@ function startTimer() {
   }
   isRunning.value = true;
   targetEndTime = Date.now() + secondsRemaining.value * 1000;
-  clearInterval(timerInterval);
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
   timerInterval = setInterval(() => {
     syncTimerWithTarget();
   }, 250);
@@ -579,11 +593,13 @@ function startTimer() {
 
 function pauseTimer() {
   if (isRunning.value && targetEndTime) {
-    syncTimerWithTarget();
+    secondsRemaining.value = computeRemainingSeconds(targetEndTime);
   }
   isRunning.value = false;
-  clearInterval(timerInterval);
-  timerInterval = null;
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
   targetEndTime = null;
 }
 
@@ -701,30 +717,45 @@ function stopAmbientNoise() {
 }
 
 // On interval finished
+let isCompletingInterval = false;
+
 async function onIntervalComplete() {
+  if (isCompletingInterval) return;
+  isCompletingInterval = true;
   pauseTimer();
   playHarmonicBell();
 
-  if (activeMode.value === "focus") {
-    // Record session to backend
-    await recordCompletedSession();
-    pomoCycleCount.value += 1;
+  try {
+    if (activeMode.value === "focus") {
+      // Auto-save active note if content exists
+      if (activeNote.value && activeNoteContent.value) {
+        await saveCurrentStudyNote();
+      }
+      // Record session to backend and journal
+      await recordCompletedSession();
+      pomoCycleCount.value += 1;
 
-    // Switch to break
-    if (pomoCycleCount.value % 4 === 0) {
-      switchMode("long_break");
+      // Switch to break
+      if (pomoCycleCount.value % 4 === 0) {
+        switchMode("long_break");
+      } else {
+        switchMode("short_break");
+      }
     } else {
-      switchMode("short_break");
+      // Break finished, return to focus
+      switchMode("focus");
     }
-  } else {
-    // Break finished, return to focus
-    switchMode("focus");
+  } catch (err) {
+    console.error("Error during onIntervalComplete:", err);
+  } finally {
+    isCompletingInterval = false;
   }
 }
 
 async function recordCompletedSession() {
   const duration = focusDurationMin.value;
   try {
+    const todayIsoStr = props.selectedJournalDate || new Date().toISOString().split("T")[0];
     const payload = {
       project_id: selectedProjectId.value,
       task_id: selectedTaskId.value,
@@ -732,26 +763,51 @@ async function recordCompletedSession() {
       duration_minutes: duration,
       session_type: "focus",
       intention: sessionIntention.value || "General study session",
-      notes: activeNoteContent.value ? activeNoteContent.value.slice(0, 300) : "",
+      notes: (activeNoteContent.value || "").trim(),
       auto_log_to_journal: autoLogToJournal.value,
       sync_habit_slug: syncHabit.value ? "study" : null,
+      session_date: todayIsoStr,
     };
 
-    const res = await fetch("/api/study/sessions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    const headers = {
+      "Content-Type": "application/json",
+      ...props.getAuthHeaders(),
+    };
 
-    if (res.ok) {
-      const created = await res.json();
-      emit("session-completed", created);
-      emit("notify", {
-        type: "success",
-        message: `Completed ${duration}m Focus Session on ${currentProjectName.value}!`,
+    let created = null;
+    try {
+      const res = await fetch(`${props.apiBase}/study/sessions`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
       });
-      await fetchStudyStats();
+
+      if (res.ok) {
+        created = await res.json();
+      } else {
+        console.warn("Backend study session record returned status:", res.status);
+      }
+    } catch (fetchErr) {
+      console.warn("Network error recording study session:", fetchErr);
     }
+
+    if (!created) {
+      created = {
+        ...payload,
+        id: Date.now(),
+        project_name: currentProjectName.value,
+        project_color: currentProject.value?.color || "#6366f1",
+        task_title: props.tasks.find((t) => t.id === selectedTaskId.value)?.title || null,
+        created_at: new Date().toISOString(),
+      };
+    }
+
+    emit("session-completed", created);
+    emit("notify", {
+      type: "success",
+      message: `Completed ${duration}m Focus Session on ${currentProjectName.value}!`,
+    });
+    await fetchStudyStats();
   } catch (err) {
     console.error("Failed to record study session:", err);
   }
@@ -759,7 +815,9 @@ async function recordCompletedSession() {
 
 async function fetchStudyStats() {
   try {
-    const res = await fetch("/api/study/stats");
+    const res = await fetch(`${props.apiBase}/study/stats`, {
+      headers: props.getAuthHeaders(),
+    });
     if (res.ok) {
       stats.value = await res.json();
     }

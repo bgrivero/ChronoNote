@@ -87,3 +87,87 @@ def test_study_session_syncs_habit_and_updates_stats(client, db_session):
     # Delete session
     del_res = client.delete(f"/api/study/sessions/{created_session['id']}")
     assert del_res.status_code == 200
+
+def test_create_study_session_with_notes_and_multiple_sessions_logged(client):
+    # Create project
+    proj_res = client.post("/api/projects", json={"name": "Quantum Computing", "color": "#8b5cf6"}).json()
+
+    # Create session 1 with notes
+    res1 = client.post(
+        "/api/study/sessions",
+        json={
+            "project_id": proj_res["id"],
+            "duration_minutes": 25,
+            "session_type": "focus",
+            "intention": "Study Grover Search Algorithm",
+            "notes": "Key Takeaway: Quadratic speedup\nQuestion: Error correction overhead",
+            "auto_log_to_journal": True,
+        },
+    )
+    assert res1.status_code == 201
+
+    # Create session 2 with same project & intention (e.g. 2nd Pomodoro cycle)
+    res2 = client.post(
+        "/api/study/sessions",
+        json={
+            "project_id": proj_res["id"],
+            "duration_minutes": 25,
+            "session_type": "focus",
+            "intention": "Study Grover Search Algorithm",
+            "notes": "Reviewed oracle phase inversion",
+            "auto_log_to_journal": True,
+        },
+    )
+    assert res2.status_code == 201
+
+    # Verify journal has both sessions and notes
+    today_str = datetime.date.today().isoformat()
+    journal_res = client.get("/api/notes?is_daily_note=true")
+    assert journal_res.status_code == 200
+    today_note = next(n for n in journal_res.json() if n["note_date"] == today_str)
+    content = today_note["content_md"]
+
+    assert content.count("Focus (25m) on [[Quantum Computing]]") == 2
+    assert "> Key Takeaway: Quadratic speedup" in content
+    assert "> Question: Error correction overhead" in content
+    assert "> Reviewed oracle phase inversion" in content
+
+
+def test_authenticated_user_study_session_isolation(client):
+    # Register user
+    auth_res = client.post(
+        "/api/auth/register",
+        json={"email": "pomouser@example.com", "name": "Pomo User", "password": "Password123!"},
+    )
+    assert auth_res.status_code == 200
+    token = auth_res.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Create project under authenticated user
+    proj_res = client.post("/api/projects", json={"name": "Robotics Lab", "color": "#06b6d4"}, headers=headers)
+    assert proj_res.status_code == 201
+    proj_id = proj_res.json()["id"]
+
+    # Create study session with auth header
+    session_res = client.post(
+        "/api/study/sessions",
+        json={
+            "project_id": proj_id,
+            "duration_minutes": 30,
+            "session_type": "focus",
+            "intention": "Calibrate inverse kinematics",
+            "notes": "Checked Jacobian determinant",
+            "auto_log_to_journal": True,
+        },
+        headers=headers,
+    )
+    assert session_res.status_code == 201
+    assert session_res.json()["project_name"] == "Robotics Lab"
+
+    # Verify user's daily journal has the entry
+    today_str = datetime.date.today().isoformat()
+    journal_res = client.get(f"/api/journal/{today_str}", headers=headers)
+    assert journal_res.status_code == 200
+    journal_data = journal_res.json()
+    assert "Focus (30m) on [[Robotics Lab]]" in journal_data["content_md"]
+    assert "Checked Jacobian determinant" in journal_data["content_md"]
