@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 import json
 from pathlib import Path
@@ -163,10 +164,23 @@ def _ensure_task_color_column() -> None:
 
 _ensure_task_color_column()
 
+
+@asynccontextmanager
+async def _app_lifespan(_app: FastAPI):
+    try:
+        from backend.mcp_server import server as _mcp_srv
+
+        async with _mcp_srv.session_manager.run():
+            yield
+    except Exception:
+        yield
+
+
 app = FastAPI(
     title="ChronoNote API",
     description="Unified Markdown Note-Taking, Project Timeline, Kanban & Knowledge Graph API",
     version="2.0.0",
+    lifespan=_app_lifespan,
 )
 
 app.add_middleware(
@@ -3502,8 +3516,15 @@ try:
     from mcp.server.transport_security import TransportSecuritySettings
     _mcp_security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
     app.mount("/mcp", mcp_server.sse_app(transport_security=_mcp_security))
+    app.mount(
+        "/mcp-http",
+        mcp_server.streamable_http_app(
+            streamable_http_path="/",
+            transport_security=_mcp_security,
+        ),
+    )
 except Exception as _exc:
-    logger.warning("Could not mount MCP SSE app: %s", _exc)
+    logger.warning("Could not mount MCP server apps: %s", _exc)
 
 
 # ---------------------------------------------------------------------------
@@ -3521,7 +3542,12 @@ if (_FRONTEND_DIST / "assets").is_dir():
 
 @app.get("/{full_path:path}", include_in_schema=False)
 def serve_spa_or_static(full_path: str):
-    if full_path.startswith("api/") or full_path.startswith("ws/") or full_path.startswith("mcp/"):
+    if (
+        full_path.startswith("api/")
+        or full_path.startswith("ws/")
+        or full_path.startswith("mcp/")
+        or full_path.startswith("mcp-http/")
+    ):
         raise HTTPException(status_code=404, detail="Not Found")
     if _FRONTEND_DIST.is_dir():
         candidate = (_FRONTEND_DIST / full_path).resolve()

@@ -323,16 +323,53 @@ const googleClientId = ref(ENV_GOOGLE_CLIENT_ID);
 const authRequired = ref(false);
 const showAuthModal = ref(false);
 const showMcpModal = ref(false);
+const mcpClientTarget = ref("antigravity");
 const mcpCodeLoading = ref(false);
 const mcpCodeError = ref("");
 const mcpConnectData = ref(null);
 const mcpCopied = ref(false);
+const mcpConfigCopied = ref(false);
 
-async function openMcpConnectModal() {
+const antigravityConfigSnippet = computed(() => {
+  const isLocal =
+    typeof window !== "undefined" &&
+    ["localhost", "127.0.0.1"].includes(window.location.hostname);
+  if (isLocal) {
+    return JSON.stringify(
+      {
+        mcpServers: {
+          "chrononote-local": {
+            command: "python",
+            args: ["run_mcp.py"],
+            env: { PYTHONPATH: "." },
+          },
+        },
+      },
+      null,
+      2
+    );
+  }
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  return JSON.stringify(
+    {
+      mcpServers: {
+        chrononote: {
+          url: `${origin}/mcp-http/`,
+        },
+      },
+    },
+    null,
+    2
+  );
+});
+
+async function openMcpConnectModal(target = "antigravity") {
+  mcpClientTarget.value = target;
   showMcpModal.value = true;
   mcpCodeLoading.value = true;
   mcpCodeError.value = "";
   mcpCopied.value = false;
+  mcpConfigCopied.value = false;
   try {
     const res = await fetch(`${API_BASE}/auth/mcp-code`, {
       headers: getAuthHeaders(),
@@ -356,6 +393,18 @@ async function copyMcpCode() {
     mcpCopied.value = true;
     setTimeout(() => {
       mcpCopied.value = false;
+    }, 2500);
+  } catch {
+    // fallback
+  }
+}
+
+async function copyAntigravityConfig() {
+  try {
+    await navigator.clipboard.writeText(antigravityConfigSnippet.value);
+    mcpConfigCopied.value = true;
+    setTimeout(() => {
+      mcpConfigCopied.value = false;
     }, 2500);
   } catch {
     // fallback
@@ -3425,11 +3474,23 @@ onMounted(async () => {
               <span class="user-menu-item-text">Theme</span>
             </button>
 
+            <!-- Connect Antigravity -->
+            <button
+              type="button"
+              class="user-menu-item"
+              @click="isUserDropdownOpen = false; openMcpConnectModal('antigravity')"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+              </svg>
+              <span class="user-menu-item-text">Connect Antigravity</span>
+            </button>
+
             <!-- Connect Claude -->
             <button
               type="button"
               class="user-menu-item"
-              @click="isUserDropdownOpen = false; openMcpConnectModal()"
+              @click="isUserDropdownOpen = false; openMcpConnectModal('claude')"
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                 <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
@@ -6334,18 +6395,24 @@ onMounted(async () => {
     </div>
 
     <!-- =====================================================================
-         MCP CLAUDE CONNECT MODAL
+         MCP AI CONNECT MODAL (Antigravity & Claude)
          ===================================================================== -->
     <div
       v-if="showMcpModal"
       class="slideover-backdrop auth-modal-backdrop"
       @click.self="showMcpModal = false"
     >
-      <div class="auth-modal-card mcp-modal-card" role="dialog" aria-label="Connect Claude to ChronoNote">
+      <div
+        class="auth-modal-card mcp-modal-card"
+        role="dialog"
+        :aria-label="mcpClientTarget === 'antigravity' ? 'Connect Antigravity to ChronoNote' : 'Connect Claude to ChronoNote'"
+      >
         <div class="auth-modal-header">
           <div>
             <span class="journal-kicker">MODEL CONTEXT PROTOCOL</span>
-            <h2 class="editorial-serif-drawer-title">Connect Claude</h2>
+            <h2 class="editorial-serif-drawer-title">
+              {{ mcpClientTarget === 'antigravity' ? 'Connect Antigravity' : 'Connect Claude' }}
+            </h2>
           </div>
           <button
             type="button"
@@ -6358,8 +6425,36 @@ onMounted(async () => {
         </div>
 
         <div class="mcp-modal-body">
+          <div class="mcp-client-tabs" role="tablist" aria-label="AI Client">
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="mcpClientTarget === 'antigravity'"
+              class="mcp-client-tab"
+              :class="{ active: mcpClientTarget === 'antigravity' }"
+              @click="mcpClientTarget = 'antigravity'"
+            >
+              Antigravity
+            </button>
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="mcpClientTarget === 'claude'"
+              class="mcp-client-tab"
+              :class="{ active: mcpClientTarget === 'claude' }"
+              @click="mcpClientTarget = 'claude'"
+            >
+              Claude
+            </button>
+          </div>
+
           <p class="mcp-modal-desc">
-            Connect Claude Desktop or Claude Code to your personal ChronoNote workspace.
+            <template v-if="mcpClientTarget === 'antigravity'">
+              Connect Google Antigravity to your personal ChronoNote workspace.
+            </template>
+            <template v-else>
+              Connect Claude Desktop or Claude Code to your personal ChronoNote workspace.
+            </template>
           </p>
 
           <div class="mcp-account-badge">
@@ -6391,8 +6486,24 @@ onMounted(async () => {
             <div class="mcp-expires-note">Expires in 15 minutes &bull; Single-use only</div>
 
             <div class="mcp-instructions-box">
-              <span class="mcp-inst-title">Prompt Claude Desktop or Claude Code:</span>
+              <span class="mcp-inst-title">
+                {{ mcpClientTarget === 'antigravity' ? 'Prompt Antigravity:' : 'Prompt Claude Desktop or Claude Code:' }}
+              </span>
               <code>Connect to ChronoNote with code {{ mcpConnectData?.code }}</code>
+            </div>
+
+            <div v-if="mcpClientTarget === 'antigravity'" class="mcp-instructions-box">
+              <div class="mcp-config-header">
+                <span class="mcp-inst-title">Config (~/.gemini/config/mcp_config.json):</span>
+                <button
+                  type="button"
+                  class="btn-copy-mini"
+                  @click="copyAntigravityConfig"
+                >
+                  {{ mcpConfigCopied ? 'Copied! ✓' : 'Copy JSON' }}
+                </button>
+              </div>
+              <pre class="mcp-config-pre"><code>{{ antigravityConfigSnippet }}</code></pre>
             </div>
           </div>
         </div>
