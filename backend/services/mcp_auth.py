@@ -15,7 +15,8 @@ from typing import Any
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from backend.models import User
+from backend.database import SessionLocal, engine
+from backend.models import McpConnectionCode, User
 from backend.services.auth_service import (
     create_session_token,
     verify_password,
@@ -33,27 +34,76 @@ _active_user_id: int | None = None
 _SESSION_FILE = Path(os.getenv("USERPROFILE", ".")) / ".chrononote_mcp_session.json"
 
 
+def _ensure_mcp_codes_table() -> None:
+    try:
+        McpConnectionCode.__table__.create(bind=engine, checkfirst=True)
+    except Exception:
+        pass
+
+
 def generate_mcp_code(user_id: int, email: str, name: str = "", ttl_seconds: int = 900) -> str:
     """Generate a 6-digit temporary connection code for an authenticated user."""
-    # Clean up expired codes
-    now = time.time()
-    expired = [k for k, v in _MCP_CODES.items() if now > v.get("expires_at", 0)]
-    for k in expired:
-        _MCP_CODES.pop(k, None)
-
+    now = int(time.time())
+    expires_at = now + int(ttl_seconds)
     code = f"{secrets.randbelow(900000) + 100000}"
-    _MCP_CODES[code] = {
-        "user_id": user_id,
-        "email": email,
-        "name": name,
-        "expires_at": now + ttl_seconds,
-    }
+
+    # Persist in DB so separate processes (e.g. FastAPI web server + stdio run_mcp.py) share codes
+    _ensure_mcp_codes_table()
+    db = SessionLocal()
+    try:
+        db.query(McpConnectionCode).filter(McpConnectionCode.expires_at < now).delete()
+        row = McpConnectionCode(
+            code=code,
+            user_id=user_id,
+            email=email,
+            name=name or "",
+            expires_at=expires_at,
+        )
+        db.add(row)
+        db.commit()
+    except Exception:
+        db.rollback()
+        # Fallback to in-memory if DB insert fails (e.g., transient test setup)
+        expired = [k for k, v in _MCP_CODES.items() if now > v.get("expires_at", 0)]
+        for k in expired:
+            _MCP_CODES.pop(k, None)
+        _MCP_CODES[code] = {
+            "user_id": user_id,
+            "email": email,
+            "name": name,
+            "expires_at": float(expires_at),
+        }
+    finally:
+        db.close()
+
     return code
 
 
 def verify_and_consume_code(code: str) -> dict[str, Any] | None:
     """Validate and consume a 6-digit connection code (single use)."""
     cleaned = code.strip().replace(" ", "").replace("-", "")
+    now = int(time.time())
+
+    _ensure_mcp_codes_table()
+    db = SessionLocal()
+    try:
+        row = db.query(McpConnectionCode).filter(McpConnectionCode.code == cleaned).first()
+        if row:
+            entry = {
+                "user_id": row.user_id,
+                "email": row.email,
+                "name": row.name,
+                "expires_at": row.expires_at,
+            }
+            is_valid = now <= row.expires_at
+            db.delete(row)
+            db.commit()
+            return entry if is_valid else None
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
+
     entry = _MCP_CODES.get(cleaned)
     if not entry:
         return None

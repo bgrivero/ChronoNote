@@ -265,3 +265,13 @@ class StickerPlacement(Base):
     sticker = relationship("Sticker", back_populates="placements")
 
 
+class McpConnectionCode(Base):
+    __tablename__ = "mcp_connection_codes"
+
+    code = Column(String(16), primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    email = Column(String(255), nullable=False)
+    name = Column(String(255), nullable=False, default="")
+    expires_at = Column(Integer, nullable=False, index=True)
+
+
