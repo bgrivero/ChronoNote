@@ -35,6 +35,15 @@ const passwordInput = ref("");
 const localError = ref("");
 const googleBtnRef = ref(null);
 
+const todayDisplay = computed(() => {
+  const now = new Date();
+  const dayNum = String(now.getDate()).padStart(2, "0");
+  const weekday = now.toLocaleDateString("en-US", { weekday: "long" });
+  const month = now.toLocaleDateString("en-US", { month: "long" });
+  const year = String(now.getFullYear());
+  return { dayNum, weekday, month, year };
+});
+
 const effectiveUser = computed(() => {
   if (props.lastUser && props.lastUser.email) {
     return props.lastUser;
@@ -139,75 +148,77 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="login-view-root">
-    <!-- SVG Duotone Filters Definition -->
-    <svg class="duotone-filter-defs" aria-hidden="true" width="0" height="0">
-      <defs>
-        <filter id="duotone-terracotta" color-interpolation-filters="sRGB">
-          <feColorMatrix
-            type="matrix"
-            values="0.33 0.33 0.33 0 0
-                    0.33 0.33 0.33 0 0
-                    0.33 0.33 0.33 0 0
-                    0 0 0 1 0"
-          />
-          <feComponentTransfer>
-            <feFuncR type="table" tableValues="0.965 0.722" />
-            <feFuncG type="table" tableValues="0.953 0.329" />
-            <feFuncB type="table" tableValues="0.925 0.137" />
-          </feComponentTransfer>
-        </filter>
-        <filter id="duotone-verdigris" color-interpolation-filters="sRGB">
-          <feColorMatrix
-            type="matrix"
-            values="0.33 0.33 0.33 0 0
-                    0.33 0.33 0.33 0 0
-                    0.33 0.33 0.33 0 0
-                    0 0 0 1 0"
-          />
-          <feComponentTransfer>
-            <feFuncR type="table" tableValues="0.965 0.173" />
-            <feFuncG type="table" tableValues="0.953 0.400" />
-            <feFuncB type="table" tableValues="0.925 0.431" />
-          </feComponentTransfer>
-        </filter>
-      </defs>
-    </svg>
+  <div class="login-entry-shell">
+    <!-- Left 58%: Structural 2-Row Prairie Stained-Glass + Dark Bronze Plinth -->
+    <aside class="login-architectural-pane" aria-hidden="true">
+      <!-- Row 1: Pure CSS Grid Prairie Mosaic (Strictly above plinth, never overlaps) -->
+      <div class="prairie-mosaic-grid">
+        <div class="mosaic-pane pane-umber" />
+        <div class="mosaic-pane pane-amber" />
+        <div class="mosaic-split-col">
+          <div class="mosaic-pane pane-terracotta" />
+          <div class="mosaic-pane pane-verdigris" />
+        </div>
 
-    <!-- Warm Architectural / Drafting Editorial Backdrop -->
-    <div class="duotone-backdrop" aria-hidden="true">
-      <div class="duotone-art-layer art-architectural duotone-apply-terracotta">
-        <svg class="duotone-svg" viewBox="0 0 500 500" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect width="500" height="500" fill="#fbf9f5" />
-          <g stroke="#b85423" stroke-width="1.2" opacity="0.85">
-            <line x1="40" y1="50" x2="460" y2="50" stroke="#b85423" stroke-width="2" />
-            <line x1="40" y1="90" x2="460" y2="90" stroke="#b85423" stroke-width="1" stroke-dasharray="6 6" />
-            <line x1="40" y1="130" x2="460" y2="130" stroke="#b85423" stroke-width="1" stroke-dasharray="6 6" />
-            <line x1="40" y1="170" x2="460" y2="170" stroke="#b85423" stroke-width="1" stroke-dasharray="6 6" />
-            <line x1="40" y1="210" x2="460" y2="210" stroke="#b85423" stroke-width="1" stroke-dasharray="6 6" />
-            <line x1="40" y1="250" x2="460" y2="250" stroke="#b85423" stroke-width="1" stroke-dasharray="6 6" />
-            <line x1="40" y1="290" x2="460" y2="290" stroke="#b85423" stroke-width="1" stroke-dasharray="6 6" />
-            <line x1="40" y1="330" x2="460" y2="330" stroke="#b85423" stroke-width="1" stroke-dasharray="6 6" />
-            <line x1="40" y1="370" x2="460" y2="370" stroke="#b85423" stroke-width="1" stroke-dasharray="6 6" />
-            <line x1="40" y1="410" x2="460" y2="410" stroke="#b85423" stroke-width="1" stroke-dasharray="6 6" />
-            <line x1="40" y1="450" x2="460" y2="450" stroke="#b85423" stroke-width="2" />
-            <line x1="120" y1="30" x2="120" y2="470" stroke="#b85423" stroke-width="1.5" />
-            <line x1="380" y1="30" x2="380" y2="470" stroke="#b85423" stroke-width="1.5" />
-          </g>
-        </svg>
-      </div>
-    </div>
-
-    <!-- Centered Editorial Login Card -->
-    <main class="login-main-stage">
-      <div class="login-card">
-        <!-- Brand Header -->
-        <header class="login-header">
-          <div class="brand-monogram">
-            <ChronoNoteLogo :size="48" />
+        <div class="mosaic-left-stack">
+          <div class="mosaic-pane pane-walnut" />
+          <div class="mosaic-pane pane-charcoal" />
+        </div>
+        <div class="mosaic-center-cluster">
+          <div class="mosaic-top-pair">
+            <div class="mosaic-pane pane-verdigris" />
+            <div class="mosaic-pane pane-umber-soft" />
           </div>
+          <div class="mosaic-pane pane-sienna-deep" />
+        </div>
+
+        <div class="mosaic-sill-row">
+          <div class="mosaic-pane pane-terracotta" />
+          <div class="mosaic-pane pane-verdigris" />
+          <div class="mosaic-pane pane-walnut" />
+        </div>
+      </div>
+
+      <!-- Row 2: Dedicated Dark-Bronze Plinth -->
+      <div class="login-plinth-panel">
+        <div class="plinth-brand-seal">
+          <div class="plinth-logo-frame">
+            <ChronoNoteLogo
+              :size="26"
+              dial-color="#F8F4EC"
+              accent-color="#E07B39"
+              paper-color="#271E18"
+            />
+          </div>
+          <div class="plinth-brand-meta">
+            <span class="plinth-brand-kicker">CHRONONOTE</span>
+            <span class="plinth-brand-sub">Notes, Timeline &amp; Habits</span>
+          </div>
+        </div>
+
+        <div class="plinth-poster-date">
+          <span class="plinth-day-numeral">{{ todayDisplay.dayNum }}</span>
+          <div class="plinth-day-script">
+            <span class="plinth-weekday-italic">{{ todayDisplay.weekday }}</span>
+            <span class="plinth-month-label">{{ todayDisplay.month }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Turned Year Margin inside dedicated right gutter -->
+      <div class="turned-year-margin">{{ todayDisplay.year }}</div>
+    </aside>
+
+    <!-- Right 42%: Flush Sunlit Alabaster Entry Form -->
+    <main class="login-form-pane">
+      <div class="login-form-inner">
+        <header class="login-pane-header">
+          <div class="mobile-only-seal">
+            <ChronoNoteLogo :size="36" />
+          </div>
+          <span class="login-pane-kicker">WORKSPACE ENTRY</span>
           <h1 class="login-serif-title">ChronoNote</h1>
-          <p class="login-sub-caption">Personal Journal &amp; Timeline</p>
+          <p class="login-sub-caption">Personal journal, calendar &amp; projects</p>
         </header>
 
         <!-- Returning User Welcome -->
@@ -310,7 +321,7 @@ onMounted(() => {
             :disabled="isAuthenticating"
           >
             <span v-if="isAuthenticating" class="spinner-inline" />
-            <span v-else>{{ authMode === "register" ? "Create Account" : "Sign In" }}</span>
+            <span v-else>{{ authMode === "register" ? "Create Account" : "Enter Workspace" }}</span>
           </button>
         </form>
       </div>
@@ -319,123 +330,266 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.login-view-root {
-  position: relative;
+.login-entry-shell {
   min-height: 100dvh;
   width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: var(--bg-page, #f6f3ec);
-  overflow: hidden;
-  padding: 24px 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.38fr) minmax(360px, 1fr);
+  background: var(--bg-card);
 }
 
-.duotone-filter-defs {
-  position: absolute;
-  width: 0;
-  height: 0;
-  pointer-events: none;
-}
-
-.duotone-backdrop {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  overflow: hidden;
-  z-index: 1;
-}
-
-.duotone-art-layer {
-  position: absolute;
-  filter: drop-shadow(0 16px 32px rgba(28, 25, 23, 0.08));
-}
-
-.duotone-svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: 24px;
-}
-
-.duotone-apply-terracotta {
-  filter: url(#duotone-terracotta);
-  mix-blend-mode: multiply;
-  opacity: 0.22;
-}
-
-.art-architectural {
-  top: -80px;
-  right: -60px;
-  width: 520px;
-  height: 520px;
-  transform: rotate(-7deg);
-}
-
-.login-main-stage {
+/* Left 58%: Structural 2-Row Prairie Mosaic + Dark Bronze Plinth */
+.login-architectural-pane {
   position: relative;
-  z-index: 10;
-  width: 100%;
-  max-width: 380px;
-  margin: 0 auto;
+  background: var(--spine-deep);
+  border-right: 1px solid rgba(28, 21, 17, 0.35);
+  display: grid;
+  grid-template-rows: minmax(220px, 1fr) auto;
+  gap: 6px;
+  padding: 24px 48px 24px 24px;
+  min-height: 100dvh;
 }
 
-.login-card {
-  background: var(--bg-card, #ffffff);
-  border: 1px solid var(--border-subtle, #e4ded3);
-  border-radius: 20px;
-  padding: 34px 28px 28px;
-  box-shadow:
-    0 1px 3px rgba(28, 25, 23, 0.04),
-    0 16px 36px -12px rgba(28, 25, 23, 0.12),
-    0 0 0 1px rgba(255, 255, 255, 0.8) inset;
-  backdrop-filter: blur(8px);
+.prairie-mosaic-grid {
+  display: grid;
+  grid-template-columns: 1.45fr 0.9fr 0.72fr;
+  grid-template-rows: 0.95fr 1.25fr 0.24fr;
+  gap: 6px;
+  min-height: 0;
+}
+
+.mosaic-pane {
+  border-radius: 1px;
+  box-shadow: inset 0 1px 0 var(--spine-line-soft);
+}
+
+.pane-umber {
+  background: #2c241f;
+}
+
+.pane-umber-soft {
+  background: #352c26;
+}
+
+.pane-charcoal {
+  background: #2a221d;
+}
+
+.pane-amber {
+  background: #b67824;
+}
+
+.pane-terracotta {
+  background: #a8411d;
+}
+
+.pane-verdigris {
+  background: #284d43;
+}
+
+.pane-walnut {
+  background: #46311d;
+}
+
+.pane-sienna-deep {
+  background: #4c2416;
+}
+
+.mosaic-split-col {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  gap: 6px;
+}
+
+.mosaic-left-stack {
+  display: grid;
+  grid-template-columns: 0.45fr 1fr;
+  gap: 6px;
+}
+
+.mosaic-center-cluster {
+  grid-column: 2 / 4;
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  gap: 6px;
+}
+
+.mosaic-top-pair {
+  display: grid;
+  grid-template-columns: 0.65fr 1fr;
+  gap: 6px;
+}
+
+.mosaic-sill-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1.1fr 0.65fr 1.6fr;
+  gap: 6px;
+}
+
+.turned-year-margin {
+  position: absolute;
+  top: 28px;
+  right: 16px;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  letter-spacing: 0.28em;
+  color: rgba(248, 244, 236, 0.52);
+  user-select: none;
+}
+
+.login-plinth-panel {
+  background: #211914;
+  border-top: 1px solid var(--spine-line-soft);
+  padding: 24px 28px 22px;
   display: flex;
   flex-direction: column;
   gap: 18px;
 }
 
-.login-header {
-  display: flex;
-  flex-direction: column;
+.plinth-brand-seal {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  text-align: center;
-  gap: 6px;
-  padding-bottom: 2px;
+  gap: 14px;
 }
 
-.brand-monogram {
+.plinth-logo-frame {
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(248, 244, 236, 0.22);
+  background: var(--bg-spine);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 2px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.plinth-brand-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.plinth-brand-kicker {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  color: var(--bg-card);
+}
+
+.plinth-brand-sub {
+  font-size: 0.8rem;
+  color: rgba(248, 244, 236, 0.66);
+}
+
+.plinth-poster-date {
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--spine-line);
+}
+
+.plinth-day-numeral {
+  font-family: var(--font-serif);
+  font-size: clamp(4.4rem, 6.2vw, 5.8rem);
+  font-weight: 400;
+  line-height: 0.82;
+  letter-spacing: -0.04em;
+  color: var(--bg-card);
+}
+
+.plinth-day-script {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 4px;
+}
+
+.plinth-weekday-italic {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 1.85rem;
+  font-weight: 400;
+  line-height: 1.05;
+  color: var(--accent-amber);
+}
+
+.plinth-month-label {
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(248, 244, 236, 0.74);
+}
+
+/* Right 42%: Flush Alabaster Form Pane */
+.login-form-pane {
+  background: var(--bg-card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 36px;
+}
+
+.login-form-inner {
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.login-pane-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.mobile-only-seal {
+  display: none;
+  margin-bottom: 6px;
+}
+
+.login-pane-kicker {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--primary-orange);
 }
 
 .login-serif-title {
   margin: 0;
-  font-family: var(--font-serif, "Instrument Serif", Georgia, serif);
-  font-size: 2.2rem;
-  font-weight: 400;
-  line-height: 1;
-  color: var(--text-dark, #1c1917);
-  letter-spacing: -0.015em;
-  text-align: center;
+  font-family: var(--font-serif, Georgia, serif);
+  font-size: 2.55rem;
+  font-weight: 500;
+  font-optical-sizing: auto;
+  line-height: 0.98;
+  color: var(--text-dark);
+  letter-spacing: -0.02em;
 }
 
 .login-sub-caption {
-  margin: 0;
-  font-size: 0.78rem;
-  color: var(--text-muted, #78716c);
+  margin: 2px 0 0;
+  font-size: 0.82rem;
+  color: var(--text-muted);
 }
 
 .returning-user-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: var(--bg-elevated, #fbf9f5);
-  border: 1px solid var(--border-subtle, #e4ded3);
-  border-radius: 10px;
+  background: var(--bg-page);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--primary-orange);
+  border-radius: 2px;
   padding: 10px 12px;
   gap: 8px;
 }
@@ -449,19 +603,19 @@ onMounted(() => {
 
 .returning-greeting {
   font-size: 0.72rem;
-  color: var(--text-muted, #78716c);
+  color: var(--text-muted);
 }
 
 .returning-name {
   font-size: 0.88rem;
   font-weight: 600;
-  color: var(--text-dark, #1c1917);
+  color: var(--text-dark);
 }
 
 .returning-email {
   font-size: 0.72rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: var(--text-muted, #78716c);
+  font-family: var(--font-mono);
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -470,7 +624,7 @@ onMounted(() => {
 .btn-switch-account {
   background: none;
   border: none;
-  color: var(--primary-orange, #b85423);
+  color: var(--primary-orange);
   font-size: 0.76rem;
   font-weight: 600;
   cursor: pointer;
@@ -481,35 +635,36 @@ onMounted(() => {
 }
 
 .btn-switch-account:hover {
-  color: var(--primary-orange-bright, #9e4418);
+  color: var(--primary-orange-bright);
 }
 
 .auth-tab-row {
   display: flex;
-  background: var(--bg-elevated, #fbf9f5);
-  border: 1px solid var(--border-subtle, #e4ded3);
-  border-radius: 8px;
-  padding: 3px;
-  gap: 4px;
+  border-bottom: 1px solid var(--border-subtle);
+  gap: 18px;
 }
 
 .auth-tab-btn {
-  flex: 1;
-  padding: 6px 12px;
-  font-size: 0.82rem;
+  padding: 7px 2px 9px;
+  font-family: var(--font-sans);
+  font-size: 0.84rem;
   font-weight: 500;
-  color: var(--text-muted, #78716c);
+  color: var(--text-muted);
   background: transparent;
   border: none;
-  border-radius: 6px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.auth-tab-btn:hover {
+  color: var(--text-dark);
 }
 
 .auth-tab-btn.active {
-  background: #ffffff;
-  color: var(--text-dark, #1c1917);
-  box-shadow: 0 1px 3px rgba(28, 25, 23, 0.08);
+  color: var(--text-dark);
+  border-bottom-color: var(--primary-orange);
   font-weight: 600;
 }
 
@@ -522,52 +677,56 @@ onMounted(() => {
 .login-credentials-form {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
 }
 
 .login-form-fields {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
 .field-item {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
 }
 
 .field-caption {
-  font-size: 0.76rem;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
   font-weight: 600;
-  color: var(--text-muted, #78716c);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
 }
 
 .login-input {
   width: 100%;
   padding: 10px 12px;
-  font-size: 0.88rem;
+  font-size: 0.9rem;
   font-family: var(--font-sans);
-  background: #ffffff;
-  border: 1px solid var(--border-strong, #d4cbbd);
-  border-radius: 8px;
-  color: var(--text-dark, #1c1917);
+  background: var(--paper);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  color: var(--text-dark);
   outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
 .login-input:focus {
-  border-color: var(--primary-orange, #b85423);
-  box-shadow: 0 0 0 3px rgba(184, 84, 35, 0.12);
+  border-color: var(--primary-orange);
+  background: var(--white);
 }
 
 .login-error-alert {
   margin: 0;
-  padding: 8px 12px;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  border-radius: 8px;
-  color: #b91c1c;
+  padding: 9px 12px;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-border);
+  border-left: 3px solid var(--danger);
+  border-radius: 2px;
+  color: var(--danger-strong);
   font-size: 0.8rem;
   display: flex;
   align-items: center;
@@ -581,21 +740,20 @@ onMounted(() => {
   justify-content: center;
   gap: 8px;
   padding: 12px 20px;
-  background: var(--primary-orange, #b85423);
-  color: #ffffff;
-  border: none;
-  border-radius: 10px;
-  font-size: 0.92rem;
+  background: var(--primary-orange);
+  color: var(--paper);
+  border: 1px solid var(--primary-orange-bright);
+  border-radius: 3px;
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
   font-weight: 600;
+  letter-spacing: 0.01em;
   cursor: pointer;
-  box-shadow: 0 1px 2px rgba(184, 84, 35, 0.2);
-  transition: all 0.15s ease;
+  transition: background 0.15s ease, transform 0.08s ease;
 }
 
 .btn-primary-enter:hover:not(:disabled) {
-  background: var(--primary-orange-bright, #9e4418);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(184, 84, 35, 0.25);
+  background: var(--primary-orange-bright);
 }
 
 .btn-primary-enter:disabled {
@@ -607,7 +765,7 @@ onMounted(() => {
   width: 14px;
   height: 14px;
   border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: #ffffff;
+  border-top-color: var(--white);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -618,12 +776,56 @@ onMounted(() => {
   }
 }
 
-@media (max-width: 640px) {
-  .login-card {
-    padding: 26px 20px 22px;
+@media (max-width: 860px) {
+  .login-entry-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
   }
-  .art-architectural {
+
+  .login-architectural-pane {
+    min-height: auto;
+    grid-template-rows: 52px auto;
+    padding: 16px 40px 16px 16px;
+    border-right: none;
+    border-bottom: 1px solid rgba(28, 21, 17, 0.35);
+  }
+
+  .prairie-mosaic-grid {
+    grid-template-columns: 1.2fr 0.8fr 1fr;
+    grid-template-rows: 1fr;
+  }
+
+  .mosaic-left-stack,
+  .mosaic-center-cluster,
+  .mosaic-sill-row {
     display: none;
+  }
+
+  .login-plinth-panel {
+    padding: 16px 18px;
+    gap: 12px;
+  }
+
+  .turned-year-margin {
+    top: 16px;
+    right: 12px;
+  }
+
+  .plinth-day-numeral {
+    font-size: 3.4rem;
+  }
+
+  .plinth-weekday-italic {
+    font-size: 1.4rem;
+  }
+
+  .login-form-pane {
+    padding: 28px 20px 40px;
+    align-items: flex-start;
+  }
+
+  .mobile-only-seal {
+    display: inline-flex;
   }
 }
 </style>

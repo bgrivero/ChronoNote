@@ -431,7 +431,7 @@ async function saveAccountSettings() {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(28, 25, 23, 0.45);
+  background: var(--bg-backdrop);
   backdrop-filter: blur(3px);
   z-index: 2000;
   display: flex;
@@ -441,14 +441,14 @@ async function saveAccountSettings() {
 }
 
 .account-settings-card {
-  background: var(--bg-card, #ffffff);
-  border: 1px solid var(--border-subtle, #e5e7eb);
-  border-radius: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
   width: min(580px, 100%);
   max-height: 90vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.14);
+  box-shadow: var(--shadow-lg);
   overflow: hidden;
   animation: modalEnter 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -469,7 +469,7 @@ async function saveAccountSettings() {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  border-bottom: 1px solid var(--border-subtle, #e5e7eb);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .settings-kicker {
@@ -478,31 +478,31 @@ async function saveAccountSettings() {
   font-size: 0.68rem;
   font-weight: 600;
   letter-spacing: 0.08em;
-  color: var(--primary-orange, #ea580c);
+  color: var(--primary-orange);
   margin-bottom: 4px;
 }
 
 .settings-title {
-  font-family: var(--font-serif, "Playfair Display", Georgia, serif);
-  font-size: 1.35rem;
-  font-weight: 600;
-  color: var(--text-dark, #1c1917);
+  font-family: var(--font-serif, Georgia, serif);
+  font-size: 1.5rem;
+  font-weight: 500;
+  color: var(--text-dark);
   margin: 0 0 4px;
 }
 
 .settings-subtitle {
   font-size: 0.8rem;
-  color: var(--text-muted, #64748b);
+  color: var(--text-muted);
   margin: 0;
 }
 
 .modal-close-btn {
-  border: none;
+  border: 1px solid transparent;
   background: transparent;
-  color: var(--text-muted, #64748b);
+  color: var(--text-muted);
   cursor: pointer;
   padding: 4px;
-  border-radius: 6px;
+  border-radius: 3px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -510,8 +510,8 @@ async function saveAccountSettings() {
 }
 
 .modal-close-btn:hover {
-  background: var(--bg-hover, #f1f5f9);
-  color: var(--text-dark, #1c1917);
+  background: var(--bg-elevated);
+  color: var(--text-dark);
 }
 
 .modal-scroll-body {
@@ -532,15 +532,15 @@ async function saveAccountSettings() {
 }
 
 .success-banner {
-  background: #f0fdf4;
-  border: 1px solid #bbf7d0;
-  color: #166534;
+  background: var(--success-bg);
+  border: 1px solid var(--success-border);
+  color: var(--success-strong);
 }
 
 .error-banner {
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  color: #991b1b;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-border);
+  color: var(--danger-strong);
 }
 
 .settings-section {
@@ -558,13 +558,13 @@ async function saveAccountSettings() {
 .section-title {
   font-size: 0.95rem;
   font-weight: 600;
-  color: var(--text-dark, #1c1917);
+  color: var(--text-dark);
   margin: 0;
 }
 
 .section-desc {
   font-size: 0.8rem;
-  color: var(--text-muted, #64748b);
+  color: var(--text-muted);
   margin: 0;
 }
 
@@ -573,16 +573,16 @@ async function saveAccountSettings() {
   font-family: var(--font-mono, monospace);
   font-size: 0.68rem;
   padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--bg-elevated, #f8fafc);
-  color: var(--text-muted, #64748b);
-  border: 1px solid var(--border-subtle, #e2e8f0);
+  border-radius: 2px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
 }
 
 .security-status-badge.has-pwd {
-  background: #f0fdf4;
-  color: #15803d;
-  border-color: #bbf7d0;
+  background: var(--secondary-cyan-soft);
+  color: var(--secondary-cyan);
+  border-color: var(--secondary-cyan-border);
 }
 
 .form-grid {
@@ -606,45 +606,45 @@ async function saveAccountSettings() {
 .form-label {
   font-size: 0.78rem;
   font-weight: 500;
-  color: var(--text-dark, #1c1917);
+  color: var(--text-dark);
 }
 
 .required-star {
-  color: #dc2626;
+  color: var(--garnet-overdue);
 }
 
 .form-input {
   width: 100%;
   padding: 8px 12px;
   font-size: 0.86rem;
-  border: 1px solid var(--border-subtle, #d1d5db);
-  border-radius: 7px;
-  background: var(--bg-card, #ffffff);
-  color: var(--text-dark, #1c1917);
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--text-dark);
   outline: none;
   box-sizing: border-box;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .form-input:focus {
-  border-color: var(--primary-orange, #ea580c);
-  box-shadow: 0 0 0 2px var(--primary-orange-soft, rgba(234, 88, 12, 0.15));
+  border-color: var(--primary-orange);
+  box-shadow: 0 0 0 2px var(--primary-orange-soft);
 }
 
 .form-input:disabled {
-  background: var(--bg-page, #f8fafc);
-  color: var(--text-muted, #94a3b8);
+  background: var(--bg-page);
+  color: var(--text-muted);
   cursor: not-allowed;
 }
 
 .field-hint {
   font-size: 0.72rem;
-  color: var(--text-muted, #64748b);
+  color: var(--text-muted);
 }
 
 .section-divider {
   height: 1px;
-  background: var(--border-subtle, #e5e7eb);
+  background: var(--border-subtle);
 }
 
 .password-fields-box {
@@ -668,7 +668,7 @@ async function saveAccountSettings() {
   right: 8px;
   border: none;
   background: transparent;
-  color: var(--text-muted, #64748b);
+  color: var(--text-muted);
   cursor: pointer;
   padding: 4px;
   display: inline-flex;
@@ -677,14 +677,14 @@ async function saveAccountSettings() {
 }
 
 .pw-toggle-btn:hover {
-  color: var(--text-dark, #1c1917);
+  color: var(--text-dark);
 }
 
 /* Strict Password Rules Box */
 .strict-rules-box {
-  background: var(--bg-elevated, #f8fafc);
-  border: 1px solid var(--border-subtle, #e2e8f0);
-  border-radius: 8px;
+  background: var(--bg-page);
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
@@ -701,7 +701,7 @@ async function saveAccountSettings() {
   font-family: var(--font-mono, monospace);
   font-size: 0.68rem;
   font-weight: 600;
-  color: var(--text-muted, #64748b);
+  color: var(--text-muted);
   letter-spacing: 0.05em;
 }
 
@@ -710,22 +710,22 @@ async function saveAccountSettings() {
   font-size: 0.68rem;
   font-weight: 600;
   padding: 1px 6px;
-  border-radius: 4px;
+  border-radius: 2px;
 }
 
 .rules-status.strength-weak {
-  background: #fee2e2;
-  color: #dc2626;
+  background: var(--danger-soft);
+  color: var(--garnet-overdue);
 }
 
 .rules-status.strength-medium {
-  background: #fef3c7;
-  color: #d97706;
+  background: var(--amber-glass-soft);
+  color: var(--amber-glass);
 }
 
 .rules-status.strength-strong {
-  background: #dcfce7;
-  color: #16a34a;
+  background: var(--secondary-cyan-soft);
+  color: var(--secondary-cyan);
 }
 
 .rules-list {
@@ -736,7 +736,7 @@ async function saveAccountSettings() {
 
 .rule-item {
   font-size: 0.76rem;
-  color: var(--text-muted, #64748b);
+  color: var(--text-muted);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -744,7 +744,7 @@ async function saveAccountSettings() {
 }
 
 .rule-item.met {
-  color: #15803d;
+  color: var(--secondary-cyan);
   font-weight: 500;
 }
 
@@ -757,11 +757,11 @@ async function saveAccountSettings() {
 
 .modal-footer {
   padding: 14px 24px;
-  border-top: 1px solid var(--border-subtle, #e5e7eb);
+  border-top: 1px solid var(--border-subtle);
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-  background: var(--bg-elevated, #fafaf9);
+  background: var(--bg-elevated);
 }
 
 .animate-fade-in {

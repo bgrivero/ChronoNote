@@ -212,20 +212,26 @@ async function handleFileUpload(event) {
 <style scoped>
 .sticker-tray-drawer {
   position: fixed;
-  top: 56px;
+  top: 0;
   right: 0;
   bottom: 0;
   width: 340px;
   max-width: 90vw;
-  background: var(--color-paper, #fdfbf7);
-  border-left: 1px solid var(--color-border, #e5dfd5);
-  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.06);
+  background: var(--bg-card);
+  border-left: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-lg);
   z-index: 1050;
   display: flex;
   flex-direction: column;
   padding: 1.25rem 1.25rem;
   box-sizing: border-box;
   animation: slideInRight 0.2s ease-out;
+}
+
+@media (max-width: 768px) {
+  .sticker-tray-drawer {
+    top: 52px;
+  }
 }
 
 @keyframes slideInRight {
@@ -249,35 +255,37 @@ async function handleFileUpload(event) {
   font-size: 0.68rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--color-muted, #7c7467);
+  color: var(--text-muted);
   font-weight: 600;
 }
 
 .tray-title {
-  font-family: var(--font-serif, "Playfair Display", Georgia, serif);
-  font-size: 1.25rem;
+  font-family: var(--font-serif, Georgia, serif);
+  font-size: 1.4rem;
+  font-weight: 500;
   margin: 0.15rem 0 0;
-  color: var(--color-ink, #2d2a26);
+  color: var(--text-dark);
 }
 
 .tray-close-btn {
   background: none;
-  border: none;
+  border: 1px solid transparent;
   font-size: 1.1rem;
-  color: var(--color-muted, #7c7467);
+  color: var(--text-muted);
   cursor: pointer;
-  padding: 0.25rem;
-  border-radius: 4px;
+  padding: 0.25rem 0.45rem;
+  border-radius: 3px;
 }
 
 .tray-close-btn:hover {
-  background: #f0ebe1;
-  color: #111;
+  background: var(--bg-elevated);
+  color: var(--text-dark);
 }
 
 .target-context-banner {
-  background: #f5efe6;
-  border-radius: 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
   padding: 0.55rem 0.75rem;
   display: flex;
   flex-direction: column;
@@ -287,12 +295,12 @@ async function handleFileUpload(event) {
 
 .context-pill {
   font-size: 0.78rem;
-  color: var(--color-ink, #2d2a26);
+  color: var(--text-dark);
 }
 
 .context-hint {
   font-size: 0.7rem;
-  color: var(--color-muted, #7c7467);
+  color: var(--text-muted);
 }
 
 .tray-controls {
@@ -312,18 +320,18 @@ async function handleFileUpload(event) {
 .cat-tab-btn {
   padding: 0.25rem 0.55rem;
   font-size: 0.74rem;
-  border: 1px solid var(--color-border, #e5dfd5);
-  border-radius: 12px;
-  background: #fff;
-  color: var(--color-muted, #7c7467);
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  background: var(--bg-card);
+  color: var(--text-muted);
   cursor: pointer;
   white-space: nowrap;
 }
 
 .cat-tab-btn.active {
-  background: #2d2a26;
-  color: #fff;
-  border-color: #2d2a26;
+  background: var(--ink-surface);
+  color: var(--on-ink);
+  border-color: var(--ink-surface);
 }
 
 .btn-upload-sticker {
@@ -331,20 +339,20 @@ async function handleFileUpload(event) {
   align-items: center;
   justify-content: center;
   padding: 0.45rem 0.75rem;
-  border: 1px dashed #cbbfb0;
-  border-radius: 6px;
-  background: #fff;
+  border: 1px dashed var(--border-strong);
+  border-radius: 3px;
+  background: var(--bg-page);
   font-size: 0.78rem;
   font-weight: 500;
-  color: #4b5563;
+  color: var(--text-body);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .btn-upload-sticker:hover {
-  background: #fcfbf9;
-  border-color: #6366f1;
-  color: #6366f1;
+  background: var(--primary-orange-soft);
+  border-color: var(--primary-orange);
+  color: var(--primary-orange);
 }
 
 /* Grid */
@@ -362,18 +370,18 @@ async function handleFileUpload(event) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  background: #fff;
-  border: 1px solid var(--color-border, #e5dfd5);
-  border-radius: 8px;
+  background: var(--bg-page);
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
   padding: 0.6rem 0.4rem;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .sticker-card:hover {
-  transform: translateY(-2px);
-  border-color: #93c5fd;
-  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.05);
+  transform: translateY(-1px);
+  border-color: var(--primary-orange);
+  background: var(--bg-card);
 }
 
 .sticker-img-wrap {
@@ -392,7 +400,7 @@ async function handleFileUpload(event) {
 
 .sticker-name {
   font-size: 0.68rem;
-  color: var(--color-muted, #7c7467);
+  color: var(--text-muted);
   text-align: center;
   margin-top: 0.35rem;
   overflow: hidden;
@@ -405,13 +413,13 @@ async function handleFileUpload(event) {
   position: absolute;
   top: 2px;
   right: 2px;
-  background: #fee2e2;
+  background: var(--danger-soft);
   border: none;
-  border-radius: 50%;
+  border-radius: 2px;
   width: 16px;
   height: 16px;
   font-size: 0.6rem;
-  color: #b91c1c;
+  color: var(--garnet-overdue);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -420,7 +428,7 @@ async function handleFileUpload(event) {
 
 /* Placed section */
 .placed-section {
-  border-top: 1px solid var(--color-border, #e5dfd5);
+  border-top: 1px solid var(--border-subtle);
   padding-top: 0.85rem;
   margin-top: 0.85rem;
 }
@@ -429,7 +437,7 @@ async function handleFileUpload(event) {
   font-size: 0.72rem;
   font-weight: 600;
   text-transform: uppercase;
-  color: var(--color-muted, #7c7467);
+  color: var(--text-muted);
   margin: 0 0 0.5rem;
 }
 
@@ -445,9 +453,9 @@ async function handleFileUpload(event) {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  background: #fff;
-  border: 1px solid var(--color-border, #e5dfd5);
-  border-radius: 14px;
+  background: var(--bg-page);
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
   padding: 0.2rem 0.45rem;
   font-size: 0.72rem;
 }
@@ -469,7 +477,7 @@ async function handleFileUpload(event) {
   background: none;
   border: none;
   font-size: 0.68rem;
-  color: #ef4444;
+  color: var(--danger);
   cursor: pointer;
   padding: 0;
   margin-left: 2px;

@@ -476,7 +476,7 @@ onBeforeUnmount(() => {
 }
 
 .draggable-image-card {
-  background: #ffffff;
+  background: var(--white);
   padding: 8px 8px 12px;
   border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 8px;
@@ -485,7 +485,7 @@ onBeforeUnmount(() => {
 }
 
 .draggable-image-card.is-selected {
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15), 0 0 0 2px var(--primary-orange, #ea580c);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15), 0 0 0 2px var(--primary-orange);
 }
 
 .image-actions-bar,
@@ -495,7 +495,7 @@ onBeforeUnmount(() => {
   gap: 6px;
   margin-bottom: 6px;
   padding: 5px 6px;
-  background: var(--bg-hover, #f8fafc);
+  background: var(--bg-hover);
   border-radius: 6px;
   font-size: 0.72rem;
 }
@@ -503,14 +503,14 @@ onBeforeUnmount(() => {
 .mode-badge {
   font-size: 0.68rem;
   font-weight: 700;
-  color: #4b5563;
+  color: var(--text-muted);
 }
 
 .img-btn-action,
 .stk-action-btn {
-  border: 1px solid #e2e8f0;
-  background: #ffffff;
-  color: #475569;
+  border: 1px solid var(--border-subtle);
+  background: var(--white);
+  color: var(--text-body);
   border-radius: 4px;
   padding: 3px 6px;
   font-size: 0.68rem;
@@ -518,21 +518,21 @@ onBeforeUnmount(() => {
 }
 
 .img-btn-action:hover,
-.stk-action-btn:hover { background: #f1f5f9; color: #0f172a; }
+.stk-action-btn:hover { background: var(--bg-elevated); color: var(--text-dark); }
 .img-btn-action.delete-btn:hover,
-.stk-delete-btn:hover { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
+.stk-delete-btn:hover { background: var(--danger-soft); color: var(--danger); border-color: var(--danger-border); }
 
 .image-inner-frame { display: flex; flex-direction: column; align-items: center; }
 .docs-draggable-img { width: 100%; height: auto; border-radius: 4px; display: block; }
-.image-caption { margin-top: 6px; color: #64748b; font-family: var(--font-serif, Georgia, serif); font-size: 0.74rem; font-style: italic; text-align: center; }
+.image-caption { margin-top: 6px; color: var(--text-muted); font-family: var(--font-serif, Georgia, serif); font-size: 0.74rem; font-style: italic; text-align: center; }
 
 .resize-handle,
 .sticker-resize-handle {
   position: absolute;
   width: 18px;
   height: 18px;
-  background: var(--primary-orange, #ea580c);
-  border: 2px solid #ffffff;
+  background: var(--primary-orange);
+  border: 2px solid var(--white);
   border-radius: 50%;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
@@ -549,11 +549,11 @@ onBeforeUnmount(() => {
   width: 24px;
   height: 24px;
   place-items: center;
-  border: 2px solid #ffffff;
+  border: 2px solid var(--white);
   border-radius: 50%;
-  background: var(--primary-orange, #ea580c);
+  background: var(--primary-orange);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
-  color: #ffffff;
+  color: var(--white);
   cursor: grab;
   font-size: 16px;
   font-weight: 700;
@@ -572,7 +572,7 @@ onBeforeUnmount(() => {
 
 .draggable-sticker-card.is-selected {
   filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.18));
-  outline: 2px dashed var(--primary-orange, #ea580c);
+  outline: 2px dashed var(--primary-orange);
   border-radius: 6px;
 }
 

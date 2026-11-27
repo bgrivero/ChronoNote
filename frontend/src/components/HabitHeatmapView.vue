@@ -32,38 +32,36 @@
       </div>
     </div>
 
-    <!-- Top Metric Blocks (Bespoke Editorial Paper Style) -->
-    <div class="kpi-grid">
-      <div class="kpi-card">
+    <!-- Top Architectural Ledger Strip (Continuous Hairline-Divided Numerals) -->
+    <div class="habits-body-content">
+    <div class="kpi-ledger-strip">
+      <div class="kpi-ledger-cell">
         <span class="kpi-label">CURRENT STREAK</span>
         <div class="kpi-value-row">
           <span class="kpi-number">{{ overallStats.best_current_streak || 0 }}</span>
           <span class="kpi-unit">days</span>
-          <span class="kpi-badge current">Active</span>
         </div>
         <span class="kpi-subtext">Consecutive active journal days</span>
       </div>
 
-      <div class="kpi-card">
+      <div class="kpi-ledger-cell">
         <span class="kpi-label">BEST STREAK</span>
         <div class="kpi-value-row">
           <span class="kpi-number">{{ overallStats.best_longest_streak || 0 }}</span>
           <span class="kpi-unit">days</span>
-          <span class="kpi-badge record">Personal Best</span>
         </div>
         <span class="kpi-subtext">All-time uninterrupted run</span>
       </div>
 
-      <div class="kpi-card">
+      <div class="kpi-ledger-cell">
         <span class="kpi-label">30-DAY RATE</span>
         <div class="kpi-value-row">
           <span class="kpi-number">{{ overallStats.average_completion_rate || 0 }}%</span>
-          <span class="kpi-badge rate">Adherence</span>
         </div>
         <span class="kpi-subtext">Rolling daily adherence</span>
       </div>
 
-      <div class="kpi-card">
+      <div class="kpi-ledger-cell">
         <span class="kpi-label">LOGGED TODAY</span>
         <div class="kpi-value-row">
           <span class="kpi-number">{{ overallStats.today_completed || 0 }}</span>
@@ -139,8 +137,8 @@
                     :y="day.dayRow * (cellSize + cellGap)"
                     :width="cellSize"
                     :height="cellSize"
-                    rx="2.5"
-                    ry="2.5"
+                    rx="1"
+                    ry="1"
                     class="heatmap-cell"
                     :class="[
                       `level-${getCellLevel(day)}`,
@@ -247,6 +245,7 @@
           </div>
         </div>
       </div>
+    </div>
     </div>
 
     <!-- Create Habit Modal Dialog -->
@@ -602,104 +601,145 @@ function submitCreateHabit() {
 .habit-heatmap-view {
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  padding: 8px 4px 40px;
+  gap: 0;
+  padding: 0;
   color: var(--text-dark);
 }
 
 .heatmap-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 16px;
   flex-wrap: wrap;
+  background: var(--bg-spine);
+  color: var(--on-spine);
+  min-height: 54px;
+  padding: 12px 28px 14px calc(var(--rail-w) + 16px);
+  position: relative;
+  border-bottom: 1px solid var(--spine-line);
+  transition: padding-left 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.heatmap-header::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--stripe-gradient);
+  pointer-events: none;
+}
+
+:global(.editorial-app.is-nav-open) .heatmap-header {
+  padding-left: 28px;
+}
+
+.habits-body-content {
+  padding: 24px 32px 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 1420px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
 }
 
 .heatmap-kicker {
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: var(--secondary-cyan);
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--accent-amber);
   text-transform: uppercase;
 }
 
 .heatmap-title {
   font-family: var(--font-serif);
-  font-size: 1.85rem;
-  font-weight: 400;
-  letter-spacing: -0.01em;
-  color: var(--text-dark);
-  margin: 4px 0 2px;
+  font-size: 2rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.04;
+  color: var(--on-spine);
+  margin: 2px 0 2px;
 }
 
 .heatmap-subtitle {
-  font-size: 0.88rem;
-  color: var(--text-muted);
+  font-size: 0.84rem;
+  color: var(--on-spine-muted);
   margin: 0;
 }
 
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .select-habit-filter {
-  padding: 8px 14px;
-  border-radius: 8px;
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-card);
+  padding: 7px 12px;
+  border-radius: 3px;
+  border: 1px solid var(--spine-line-strong);
+  background: var(--bg-spine-elevated);
   font-family: var(--font-sans);
-  font-size: 0.84rem;
-  color: var(--text-dark);
-  box-shadow: var(--shadow-xs);
+  font-size: 0.82rem;
+  color: var(--on-spine);
   cursor: pointer;
   outline: none;
   transition: border-color 0.15s ease;
 }
 
 .select-habit-filter:focus {
-  border-color: var(--primary-orange-border);
+  border-color: var(--accent-amber);
 }
 
 .btn-editorial-primary {
   background: var(--primary-orange);
-  color: #ffffff;
-  border: none;
+  color: var(--paper);
+  border: 1px solid var(--primary-orange-bright);
   padding: 8px 16px;
-  border-radius: 8px;
+  border-radius: 3px;
   font-family: var(--font-sans);
-  font-size: 0.84rem;
+  font-size: 0.83rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, transform 0.1s ease;
-  box-shadow: var(--shadow-xs);
+  transition: background 0.15s ease;
 }
 
 .btn-editorial-primary:hover {
   background: var(--primary-orange-bright);
 }
 
-.kpi-grid {
+/* Continuous Architectural Ledger Strip */
+.kpi-ledger-strip {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  border-top: 1px solid var(--border-strong);
+  border-bottom: 1px solid var(--border-strong);
+  border-left: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
+  background: var(--bg-card);
 }
 
-.kpi-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: 9px;
-  padding: 16px 18px;
+.kpi-ledger-cell {
+  padding: 18px 20px;
   display: flex;
   flex-direction: column;
-  box-shadow: var(--shadow-xs);
+  border-right: 1px solid var(--border-subtle);
+}
+
+.kpi-ledger-cell:last-child {
+  border-right: none;
 }
 
 .kpi-label {
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
   color: var(--text-muted);
   text-transform: uppercase;
 }
@@ -707,62 +747,38 @@ function submitCreateHabit() {
 .kpi-value-row {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  margin: 6px 0 4px;
+  gap: 7px;
+  margin: 8px 0 4px;
 }
 
 .kpi-number {
   font-family: var(--font-serif);
-  font-size: 2.1rem;
-  font-weight: 400;
+  font-size: 3.1rem;
+  font-weight: 500;
   color: var(--text-dark);
-  line-height: 1;
+  line-height: 0.9;
+  letter-spacing: -0.02em;
 }
 
 .kpi-unit {
-  font-size: 0.84rem;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 1.05rem;
   color: var(--text-muted);
-}
-
-.kpi-badge {
-  font-size: 0.7rem;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 12px;
-  margin-left: auto;
-  letter-spacing: 0.02em;
-}
-
-.kpi-badge.current {
-  background: var(--primary-orange-soft);
-  color: var(--primary-orange);
-  border: 1px solid var(--primary-orange-border);
-}
-
-.kpi-badge.record {
-  background: #fdf6ec;
-  color: #92400e;
-  border: 1px solid #fcd34d;
-}
-
-.kpi-badge.rate {
-  background: var(--secondary-cyan-soft);
-  color: var(--secondary-cyan);
-  border: 1px solid var(--secondary-cyan-border);
 }
 
 .kpi-subtext {
-  font-size: 0.76rem;
+  font-size: 0.74rem;
   color: var(--text-muted);
 }
 
-/* Heatmap Card */
+/* Heatmap Card (Flush Leaded-Glass Pane) */
 .heatmap-card {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
-  border-radius: 9px;
-  padding: 18px 20px;
-  box-shadow: var(--shadow-xs);
+  border-radius: 0;
+  padding: 20px 22px;
+  box-shadow: none;
 }
 
 .heatmap-card-header {
@@ -775,10 +791,11 @@ function submitCreateHabit() {
 }
 
 .hm-card-title {
-  font-size: 0.72rem;
-  font-weight: 700;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
   letter-spacing: 0.08em;
-  color: var(--text-body);
+  color: var(--text-dark);
   text-transform: uppercase;
 }
 
@@ -795,41 +812,42 @@ function submitCreateHabit() {
 }
 
 .legend-text {
-  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
   color: var(--text-muted);
 }
 
 .legend-swatch {
   width: 12px;
   height: 12px;
-  border-radius: 2.5px;
+  border-radius: 1px;
   display: inline-block;
 }
 
-/* Authentic warm ink / verdigris palette matching ChronoNote */
+/* Warm Stained-Glass Amber -> Terracotta -> Garnet Ramp */
 .level-0 {
-  fill: #ede8de;
-  background-color: #ede8de;
+  fill: #e6ddd0;
+  background-color: #e6ddd0;
 }
 
 .level-1 {
-  fill: #dce8e8;
-  background-color: #dce8e8;
+  fill: #ebd2a0;
+  background-color: #ebd2a0;
 }
 
 .level-2 {
-  fill: #9ec0c3;
-  background-color: #9ec0c3;
+  fill: #dc973c;
+  background-color: #dc973c;
 }
 
 .level-3 {
-  fill: #5a8f96;
-  background-color: #5a8f96;
+  fill: #c25122;
+  background-color: #c25122;
 }
 
 .level-4 {
-  fill: #2c666e;
-  background-color: #2c666e;
+  fill: #722618;
+  background-color: #722618;
 }
 
 .heatmap-scroll-wrapper {
@@ -852,7 +870,8 @@ function submitCreateHabit() {
 }
 
 .weekday-label {
-  font-size: 0.65rem;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
   color: var(--text-muted);
   height: 13px;
   line-height: 13px;
@@ -867,7 +886,7 @@ function submitCreateHabit() {
 .month-svg-text {
   font-size: 10px;
   fill: var(--text-muted);
-  font-family: var(--font-sans);
+  font-family: var(--font-mono);
 }
 
 .heatmap-cell {
@@ -894,11 +913,11 @@ function submitCreateHabit() {
 .heatmap-tooltip {
   position: fixed;
   transform: translate(-50%, -100%);
-  background: var(--bg-elevated);
-  color: var(--text-dark);
+  background: var(--ink-surface);
+  color: var(--on-ink);
   border: 1px solid var(--border-strong);
-  padding: 7px 12px;
-  border-radius: 7px;
+  padding: 8px 12px;
+  border-radius: 3px;
   font-size: 0.78rem;
   pointer-events: none;
   z-index: 1000;
@@ -908,20 +927,20 @@ function submitCreateHabit() {
 
 .tt-date {
   font-family: var(--font-serif);
-  font-size: 0.88rem;
-  font-weight: 600;
-  color: var(--text-dark);
+  font-size: 0.96rem;
+  font-weight: 500;
+  color: var(--bg-card);
   margin-bottom: 2px;
 }
 
 .tt-stats {
-  color: var(--secondary-cyan);
+  color: var(--accent-amber);
   font-weight: 500;
 }
 
 .tt-action {
   font-size: 0.68rem;
-  color: var(--text-muted);
+  color: var(--on-spine-muted);
   margin-top: 3px;
 }
 
@@ -936,37 +955,40 @@ function submitCreateHabit() {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 8px;
 }
 
 .section-title {
   font-family: var(--font-serif);
-  font-size: 1.45rem;
-  font-weight: 400;
+  font-size: 1.65rem;
+  font-weight: 500;
   color: var(--text-dark);
   margin: 0;
 }
 
 .section-count {
-  font-size: 0.8rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
   color: var(--text-muted);
 }
 
 .habit-cards-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 14px;
+  gap: 12px;
 }
 
 .habit-card {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
-  border-left-width: 4px;
-  border-radius: 9px;
+  border-left-width: 3px;
+  border-radius: 2px;
   padding: 16px 18px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: var(--shadow-xs);
+  box-shadow: none;
 }
 
 .habit-card-top {
@@ -987,9 +1009,9 @@ function submitCreateHabit() {
   font-size: 0.74rem;
   font-weight: 500;
   padding: 5px 9px;
-  border-radius: 7px;
+  border-radius: 3px;
   border: 1px solid var(--border-subtle);
-  background: var(--bg-card);
+  background: var(--bg-page);
   color: var(--text-muted);
   cursor: pointer;
   display: inline-flex;
@@ -1001,18 +1023,18 @@ function submitCreateHabit() {
 .habit-edit-action-btn:hover {
   border-color: var(--secondary-cyan);
   color: var(--secondary-cyan);
-  background: var(--bg-subtle-hover);
+  background: var(--secondary-cyan-soft);
 }
 
 .habit-name {
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: 0.96rem;
   color: var(--text-dark);
   display: block;
 }
 
 .habit-slug {
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   font-family: var(--font-mono);
   color: var(--secondary-cyan);
 }
@@ -1021,9 +1043,9 @@ function submitCreateHabit() {
   font-size: 0.78rem;
   font-weight: 500;
   padding: 5px 11px;
-  border-radius: 7px;
+  border-radius: 3px;
   border: 1px solid var(--border-strong);
-  background: var(--bg-elevated);
+  background: var(--bg-page);
   color: var(--text-body);
   cursor: pointer;
   display: inline-flex;
@@ -1033,7 +1055,7 @@ function submitCreateHabit() {
 }
 
 .habit-quick-toggle:hover {
-  background: var(--bg-subtle-hover);
+  background: var(--bg-elevated);
   color: var(--text-dark);
 }
 
@@ -1060,27 +1082,29 @@ function submitCreateHabit() {
 }
 
 .meta-val {
-  font-family: var(--font-sans);
+  font-family: var(--font-serif);
   font-weight: 600;
-  font-size: 0.88rem;
+  font-size: 1.15rem;
+  line-height: 1.05;
   color: var(--text-dark);
 }
 
 .meta-lbl {
-  font-size: 0.68rem;
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
   color: var(--text-muted);
 }
 
 .progress-bar-bg {
-  height: 4px;
-  background: var(--bg-subtle-hover);
-  border-radius: 2px;
+  height: 2px;
+  background: var(--bg-elevated);
+  border-radius: 0;
   overflow: hidden;
 }
 
 .progress-bar-fill {
   height: 100%;
-  border-radius: 2px;
+  border-radius: 0;
   transition: width 0.3s ease;
 }
 
@@ -1088,7 +1112,7 @@ function submitCreateHabit() {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(28, 25, 23, 0.45);
+  background: rgba(28, 21, 17, 0.45);
   backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
@@ -1098,9 +1122,9 @@ function submitCreateHabit() {
 }
 
 .modal-card {
-  background: var(--bg-elevated);
+  background: var(--bg-card);
   border: 1px solid var(--border-strong);
-  border-radius: 12px;
+  border-radius: 4px;
   width: 100%;
   max-width: 440px;
   padding: 24px;
@@ -1116,8 +1140,8 @@ function submitCreateHabit() {
 
 .modal-title {
   font-family: var(--font-serif);
-  font-size: 1.45rem;
-  font-weight: 400;
+  font-size: 1.55rem;
+  font-weight: 500;
   color: var(--text-dark);
   margin: 0;
 }
@@ -1169,9 +1193,9 @@ function submitCreateHabit() {
 
 .input-minimal {
   padding: 8px 12px;
-  border-radius: 7px;
+  border-radius: 3px;
   border: 1px solid var(--border-subtle);
-  background: var(--bg-card);
+  background: var(--bg-page);
   font-family: var(--font-sans);
   font-size: 0.85rem;
   color: var(--text-dark);
@@ -1180,14 +1204,15 @@ function submitCreateHabit() {
 }
 
 .input-minimal:focus {
-  border-color: var(--primary-orange-border);
+  border-color: var(--primary-orange);
+  background: var(--paper);
 }
 
 .input-color {
   height: 38px;
   width: 100%;
   padding: 2px;
-  border-radius: 7px;
+  border-radius: 3px;
   border: 1px solid var(--border-subtle);
   background: var(--bg-card);
   cursor: pointer;
@@ -1216,11 +1241,11 @@ function submitCreateHabit() {
 }
 
 .btn-editorial-danger {
-  background: rgba(192, 57, 43, 0.08);
-  border: 1px solid rgba(192, 57, 43, 0.25);
-  color: #c0392b;
+  background: var(--danger-tint);
+  border: 1px solid var(--danger-ring);
+  color: var(--garnet-overdue);
   padding: 8px 14px;
-  border-radius: 8px;
+  border-radius: 3px;
   font-family: var(--font-sans);
   font-size: 0.82rem;
   font-weight: 600;
@@ -1229,9 +1254,9 @@ function submitCreateHabit() {
 }
 
 .btn-editorial-danger:hover {
-  background: #c0392b;
-  color: #ffffff;
-  border-color: #c0392b;
+  background: var(--garnet-overdue);
+  color: var(--white);
+  border-color: var(--garnet-overdue);
 }
 
 .btn-editorial-ghost {
@@ -1239,7 +1264,7 @@ function submitCreateHabit() {
   border: 1px solid var(--border-strong);
   color: var(--text-body);
   padding: 8px 16px;
-  border-radius: 8px;
+  border-radius: 3px;
   font-family: var(--font-sans);
   font-size: 0.84rem;
   cursor: pointer;
@@ -1249,5 +1274,18 @@ function submitCreateHabit() {
 .btn-editorial-ghost:hover {
   background: var(--bg-subtle-hover);
   color: var(--text-dark);
+}
+
+@media (max-width: 900px) {
+  .kpi-ledger-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .kpi-ledger-cell:nth-child(2) {
+    border-right: none;
+  }
+  .kpi-ledger-cell:nth-child(1),
+  .kpi-ledger-cell:nth-child(2) {
+    border-bottom: 1px solid var(--border-subtle);
+  }
 }
 </style>

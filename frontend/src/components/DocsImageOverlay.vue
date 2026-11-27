@@ -209,7 +209,7 @@ function stopResize() {
 .draggable-image-card {
   pointer-events: auto;
   user-select: none;
-  background: #fff;
+  background: var(--white);
   padding: 8px 8px 12px;
   border-radius: 8px;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04);
@@ -228,7 +228,7 @@ function stopResize() {
   gap: 4px;
   margin-bottom: 6px;
   padding: 2px 4px;
-  background: #f8fafc;
+  background: var(--bg-card);
   border-radius: 6px;
   font-size: 0.72rem;
 }
@@ -236,29 +236,29 @@ function stopResize() {
 .mode-badge {
   font-size: 0.68rem;
   font-weight: 600;
-  color: #4b5563;
+  color: var(--text-muted);
   margin-right: auto;
 }
 
 .img-btn-action {
   padding: 2px 6px;
   font-size: 0.68rem;
-  border: 1px solid #e2e8f0;
-  background: #fff;
+  border: 1px solid var(--border-subtle);
+  background: var(--white);
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.1s ease;
 }
 
 .img-btn-action:hover {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
+  background: var(--bg-elevated);
+  border-color: var(--border-medium);
 }
 
 .img-btn-action.delete-btn:hover {
-  background: #fee2e2;
-  color: #dc2626;
-  border-color: #fca5a5;
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-color: var(--danger-border);
 }
 
 .image-inner-frame {
@@ -278,7 +278,7 @@ function stopResize() {
   font-size: 0.74rem;
   font-family: var(--font-serif, Georgia, serif);
   font-style: italic;
-  color: #64748b;
+  color: var(--text-muted);
   margin-top: 6px;
   text-align: center;
 }
