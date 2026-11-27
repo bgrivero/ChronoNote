@@ -2847,7 +2847,7 @@ body {
 
 .year-header-row {
   display: grid;
-  grid-template-columns: 210px repeat(12, minmax(0, 1fr));
+  grid-template-columns: 248px repeat(12, minmax(0, 1fr));
   border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-page);
 }
@@ -2895,8 +2895,66 @@ body {
 
 .year-project-swimlane {
   display: grid;
-  grid-template-columns: 210px minmax(0, 1fr);
+  grid-template-columns: 248px minmax(0, 1fr);
   border-bottom: 1px solid var(--border-subtle);
+}
+
+.year-subtask-swimrow {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  border-top: 1px solid var(--border-faint);
+  background: var(--bg-card);
+  transition: background 0.12s ease;
+}
+
+.year-subtask-swimrow:hover {
+  background: var(--bg-paper-warm);
+}
+
+.year-subtask-label-cell {
+  padding: 6px 12px 6px 16px;
+  border-right: 1px solid var(--border-subtle);
+  background: var(--bg-paper-warm);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.year-subtask-swimrow:hover .year-subtask-label-cell {
+  background: var(--bg-hover);
+}
+
+.year-subtask-label-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  gap: 1px;
+}
+
+.year-subtask-label-title {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text-dark);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.25;
+}
+
+.year-subtask-label-dates {
+  font-family: var(--font-mono);
+  font-size: 0.63rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.year-twelve-months-grid.is-subtask-row {
+  padding: 5px 10px;
+  align-items: center;
 }
 
 .cal-project-cell {
@@ -6279,15 +6337,15 @@ body {
   position: relative;
   display: grid;
   grid-template-columns: repeat(var(--grid-days, 7), minmax(0, 1fr));
-  background-color: var(--on-spine);
+  background-color: var(--bg-card);
   background-image: linear-gradient(
     180deg,
-    rgba(28, 21, 17, 0.035) 0%,
-    rgba(28, 21, 17, 0.015) 25%,
-    rgba(255, 250, 240, 0.45) 34%,
-    rgba(255, 250, 240, 0.45) 68%,
-    rgba(201, 131, 33, 0.055) 78%,
-    rgba(28, 21, 17, 0.04) 94%
+    rgba(29, 31, 33, 0.03) 0%,
+    rgba(29, 31, 33, 0.01) 25%,
+    rgba(255, 255, 255, 0.45) 34%,
+    rgba(255, 255, 255, 0.45) 68%,
+    rgba(201, 131, 33, 0.045) 78%,
+    rgba(29, 31, 33, 0.035) 94%
   );
 }
 

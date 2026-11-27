@@ -6503,103 +6503,141 @@ onUnmounted(() => {
                     "
                   />
                 </div>
+              </div>
 
-                <!-- Row 2..N: Subtasks stacked vertically (Draggable & Stretchable) -->
+              <!-- Aligned Subtask Swimrows (Readable left label + 12-month bar on right) -->
+              <div
+                v-for="task in getYearProjectTaskRows(proj.id, pIdx)"
+                :key="task.id"
+                class="year-subtask-swimrow"
+              >
                 <div
-                  v-for="task in getYearProjectTaskRows(proj.id, pIdx)"
-                  :key="task.id"
-                  class="week-item-card clickable-card is-subtask-bar is-draggable-task"
-                  :class="{
-                    'is-done-card': task.status === 'done',
-                    'is-currently-dragged':
-                      activeTimelineDrag &&
-                      activeTimelineDrag.isTask &&
-                      activeTimelineDrag.taskId === task.id,
-                  }"
-                  :style="task.gridStyle"
-                  @pointerdown="
-                    startTimelineDrag($event, proj.id, 'move', 'year', task.id)
-                  "
-                  @click="!wasTimelineDragging && openProjectDrawer(proj.id, 'subtasks')"
+                  class="year-subtask-label-cell"
+                  :title="`${task.code} · ${task.title} (${task.start_date} → ${task.due_date})`"
+                  @click="openProjectDrawer(proj.id, 'subtasks')"
                 >
-                  <!-- Left Resize Handle for Subtask in Year View -->
-                  <div
-                    class="timeline-resize-handle handle-left"
-                    title="Drag to extend or shorten subtask start date in Year View"
-                    @pointerdown.stop.prevent="
-                      startTimelineDrag(
-                        $event,
-                        proj.id,
-                        'resize-start',
-                        'year',
-                        task.id
-                      )
+                  <button
+                    type="button"
+                    class="subtask-check-btn"
+                    :class="{ checked: task.status === 'done' }"
+                    :style="
+                      task.status === 'done'
+                        ? {
+                            backgroundColor: task.color || '#2c666e',
+                            borderColor: task.color || '#2c666e',
+                          }
+                        : { borderColor: task.color || '#2c666e' }
                     "
-                  />
-
-                  <div class="week-item-main">
-                    <button
-                      type="button"
-                      class="subtask-check-btn"
-                      :class="{ checked: task.status === 'done' }"
-                      :style="
-                        task.status === 'done'
-                          ? {
-                              backgroundColor: task.color || '#2c666e',
-                              borderColor: task.color || '#2c666e',
-                            }
-                          : { borderColor: task.color || '#2c666e' }
-                      "
-                      @click.stop="toggleSubtaskStatus(proj.id, task.id)"
+                    @click.stop="toggleSubtaskStatus(proj.id, task.id)"
+                  >
+                    <svg
+                      v-if="task.status === 'done'"
+                      width="11"
+                      height="11"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="3"
                     >
-                      <svg
-                        v-if="task.status === 'done'"
-                        width="11"
-                        height="11"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="3"
-                      >
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    </button>
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  </button>
+                  <span
+                    class="color-badge-mono"
+                    :style="{
+                      color: task.color || '#2c666e',
+                      borderColor: `${task.color || '#2c666e'}44`,
+                    }"
+                  >
+                    {{ task.code }}
+                  </span>
+                  <div class="year-subtask-label-text">
                     <span
-                      class="color-badge-mono"
-                      :style="{
-                        color: task.color || '#2c666e',
-                        borderColor: `${task.color || '#2c666e'}44`,
-                      }"
-                    >
-                      {{ task.code }}
-                    </span>
-                    <strong
-                      class="week-item-title"
+                      class="year-subtask-label-title"
                       :class="{ 'strikethrough-done': task.status === 'done' }"
                     >
                       {{ task.title }}
-                    </strong>
-                  </div>
-                  <div class="week-item-meta">
-                    <span class="item-dates-label">
+                    </span>
+                    <span class="year-subtask-label-dates">
                       {{ task.start_date }} → {{ task.due_date }}
                     </span>
                   </div>
+                </div>
 
-                  <!-- Right Resize Handle for Subtask in Year View -->
+                <div class="year-twelve-months-grid is-subtask-row">
+                  <div class="year-bg-guides">
+                    <div v-for="m in 12" :key="m" class="year-bg-col" />
+                  </div>
+
                   <div
-                    class="timeline-resize-handle handle-right"
-                    title="Drag to extend or shorten subtask due date in Year View"
-                    @pointerdown.stop.prevent="
-                      startTimelineDrag(
-                        $event,
-                        proj.id,
-                        'resize-end',
-                        'year',
-                        task.id
-                      )
+                    class="week-item-card clickable-card is-subtask-bar is-draggable-task"
+                    :class="{
+                      'is-done-card': task.status === 'done',
+                      'is-currently-dragged':
+                        activeTimelineDrag &&
+                        activeTimelineDrag.isTask &&
+                        activeTimelineDrag.taskId === task.id,
+                    }"
+                    :style="{ ...task.gridStyle, gridRow: 1 }"
+                    :title="`${task.code} · ${task.title} (${task.start_date} → ${task.due_date})`"
+                    @pointerdown="
+                      startTimelineDrag($event, proj.id, 'move', 'year', task.id)
                     "
-                  />
+                    @click="!wasTimelineDragging && openProjectDrawer(proj.id, 'subtasks')"
+                  >
+                    <!-- Left Resize Handle for Subtask in Year View -->
+                    <div
+                      class="timeline-resize-handle handle-left"
+                      title="Drag to extend or shorten subtask start date in Year View"
+                      @pointerdown.stop.prevent="
+                        startTimelineDrag(
+                          $event,
+                          proj.id,
+                          'resize-start',
+                          'year',
+                          task.id
+                        )
+                      "
+                    />
+
+                    <div class="week-item-main">
+                      <span
+                        class="color-badge-mono"
+                        :style="{
+                          color: task.color || '#2c666e',
+                          borderColor: `${task.color || '#2c666e'}44`,
+                        }"
+                      >
+                        {{ task.code }}
+                      </span>
+                      <strong
+                        class="week-item-title"
+                        :class="{ 'strikethrough-done': task.status === 'done' }"
+                      >
+                        {{ task.title }}
+                      </strong>
+                    </div>
+                    <div class="week-item-meta">
+                      <span class="item-dates-label">
+                        {{ task.start_date }} → {{ task.due_date }}
+                      </span>
+                    </div>
+
+                    <!-- Right Resize Handle for Subtask in Year View -->
+                    <div
+                      class="timeline-resize-handle handle-right"
+                      title="Drag to extend or shorten subtask due date in Year View"
+                      @pointerdown.stop.prevent="
+                        startTimelineDrag(
+                          $event,
+                          proj.id,
+                          'resize-end',
+                          'year',
+                          task.id
+                        )
+                      "
+                    />
+                  </div>
                 </div>
               </div>
             </div>
