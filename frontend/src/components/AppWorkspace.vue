@@ -49,6 +49,7 @@ import {
   groupProjectsForKanban,
   groupSidebarProjects,
   isProjectCompleted,
+  isProjectOverdueExempt,
   isTaskOverdue,
   isTimedTask,
   moveProjectInKanban,
@@ -750,8 +751,11 @@ const sidebarGroups = computed(() =>
 const pinnedProjects = computed(() =>
   projects.value.filter((p) => {
     if (!p.is_pinned || p.status === "archived") return false;
-    if (taskFilterMode.value === "active" || taskFilterMode.value === "overdue") {
+    if (taskFilterMode.value === "active") {
       return !isProjectCompleted(p);
+    }
+    if (taskFilterMode.value === "overdue") {
+      return !isProjectOverdueExempt(p);
     }
     if (taskFilterMode.value === "done") {
       const tasks = projectTasksMap.value[p.id] || [];
@@ -1125,7 +1129,7 @@ const timedTasksByDate = computed(() => {
       project_id: proj ? proj.id : null,
       projectName: proj ? proj.name : "Inbox",
       displayColor: task.color || proj?.color || (proj ? "#2c666e" : "#e11d48"),
-      isOverdue: isTaskOverdue(task, todayIso.value),
+      isOverdue: (!proj || !isProjectOverdueExempt(proj)) && isTaskOverdue(task, todayIso.value),
       isStandalone: !proj,
     });
   };
@@ -1134,8 +1138,8 @@ const timedTasksByDate = computed(() => {
     if (proj.status === "archived" || !visibleProjs.has(proj.id)) continue;
     const projDone = isProjectCompleted(proj);
     if (
-      (taskFilterMode.value === "active" || taskFilterMode.value === "overdue") &&
-      projDone
+      (taskFilterMode.value === "active" && projDone) ||
+      (taskFilterMode.value === "overdue" && isProjectOverdueExempt(proj))
     ) {
       continue;
     }

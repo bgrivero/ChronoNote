@@ -539,12 +539,25 @@ function isProjectSubtasksExpanded(projectId, visibleSubtaskProjectIds) {
   return Boolean(visibleSubtaskProjectIds[projectId]);
 }
 
+export function isProjectOverdueExempt(proj) {
+  if (!proj) return true;
+  return (
+    proj.status === "archived" ||
+    proj.status === "on_hold" ||
+    isProjectCompleted(proj)
+  );
+}
+
 function doesProjectMatchFilterMode(proj, taskFilterMode, projIsDone, overdueRefIso) {
   if (taskFilterMode === "all") return true;
   if (taskFilterMode === "active") return !projIsDone;
   if (taskFilterMode === "done") return projIsDone;
   if (taskFilterMode === "overdue") {
-    return Boolean(proj?.target_date && proj.target_date < overdueRefIso && !projIsDone);
+    return Boolean(
+      proj?.target_date &&
+        proj.target_date < overdueRefIso &&
+        !isProjectOverdueExempt(proj)
+    );
   }
   return true;
 }
@@ -643,7 +656,7 @@ export function collectOverdueTasks(
 
     if (rawPid !== null) {
       const proj = projectsById.get(String(rawPid));
-      if (!proj || proj.status === "archived" || isProjectCompleted(proj)) {
+      if (isProjectOverdueExempt(proj)) {
         return;
       }
       overdue.push({
@@ -978,7 +991,7 @@ export function filterProjectsByStatus(projects, filterMode = "active", projectT
   if (filterMode === "overdue") {
     const today = referenceDateIso || getLocalTodayIsoFallback();
     return list.filter((p) => {
-      if (isProjectCompleted(p)) return false;
+      if (isProjectOverdueExempt(p)) return false;
       if (p.target_date && p.target_date < today) return true;
       const tasks = projectTasksMap[p.id] || [];
       return tasks.some((t) => isTaskOverdue(t, today));
@@ -1096,8 +1109,11 @@ export function buildMonthlyWeekRows(
       const proj = candidateProjects[pIdx];
       const projIsDone = isProjectCompleted(proj);
 
-      // In 'active' or 'overdue' filter mode, finished projects (and their subtasks) are hidden
-      if ((taskFilterMode === "active" || taskFilterMode === "overdue") && projIsDone) {
+      // In 'active' mode, finished projects are hidden; in 'overdue' mode, completed/archived/on_hold projects are hidden
+      if (
+        (taskFilterMode === "active" && projIsDone) ||
+        (taskFilterMode === "overdue" && isProjectOverdueExempt(proj))
+      ) {
         continue;
       }
 
@@ -1205,7 +1221,7 @@ export function buildMonthlyWeekRows(
           );
           if (tGeom.visible) {
             const isMilestone = Boolean(task.is_milestone);
-            const isOverdue = isTaskOverdue(task, overdueRefIso);
+            const isOverdue = !isProjectOverdueExempt(proj) && isTaskOverdue(task, overdueRefIso);
             rawItems.push({
               uid: `task-${task.id}-w${w + 1}`,
               kind: isMilestone ? "milestone" : "task",
@@ -1392,7 +1408,10 @@ export function buildFocusedWeekRow(
     const proj = candidateProjects[pIdx];
     const projIsDone = isProjectCompleted(proj);
 
-    if ((taskFilterMode === "active" || taskFilterMode === "overdue") && projIsDone) {
+    if (
+      (taskFilterMode === "active" && projIsDone) ||
+      (taskFilterMode === "overdue" && isProjectOverdueExempt(proj))
+    ) {
       continue;
     }
 
@@ -1495,7 +1514,7 @@ export function buildFocusedWeekRow(
         );
         if (tGeom.visible) {
           const isMilestone = Boolean(task.is_milestone);
-          const isOverdue = isTaskOverdue(task, overdueRefIso);
+          const isOverdue = !isProjectOverdueExempt(proj) && isTaskOverdue(task, overdueRefIso);
           rawItems.push({
             uid: `week-task-${task.id}`,
             kind: isMilestone ? "milestone" : "task",

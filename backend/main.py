@@ -244,7 +244,7 @@ def _compute_sidebar_project_item(
     tasks = project.tasks or []
     total_tasks = len(tasks)
     completed_tasks = sum(1 for t in tasks if t.status == "done" or t.progress == 100)
-    if project.status in ("completed", "done", "archived"):
+    if project.status in ("completed", "done", "archived", "on_hold"):
         overdue_tasks = 0
     else:
         overdue_tasks = sum(
@@ -1582,7 +1582,7 @@ def list_tasks(
                 or_(
                     Task.project_id.is_(None),
                     Project.status.is_(None),
-                    Project.status.notin_(["archived", "completed", "done"]),
+                    Project.status.notin_(["archived", "completed", "done", "on_hold"]),
                 ),
             )
         else:

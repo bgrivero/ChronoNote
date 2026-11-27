@@ -997,11 +997,12 @@ test("Subtask deadline_only option renders only on due date in Month and Week ti
   assert.equal(weekTask.dateRangeText, "Due 2026-11-18");
 });
 
-test("collectOverdueTasks deduplicates standalone tasks, excludes done/archived/completed projects, and sorts chronologically", () => {
+test("collectOverdueTasks deduplicates standalone tasks, excludes done/archived/completed/on_hold projects, and sorts chronologically", () => {
   const projects = [
     { id: 1, name: "Active Launch", status: "active", color: "#b85423", is_pinned: true },
     { id: 2, name: "Archived Stuff", status: "archived", color: "#4a7c59", is_pinned: false },
     { id: 3, name: "Finished Work", status: "completed", color: "#6d597a", is_pinned: false },
+    { id: 4, name: "Paused Initiative", status: "on_hold", color: "#0891b2", is_pinned: true, target_date: "2026-10-01" },
   ];
   const standaloneTasks = [
     { id: 50, project_id: null, title: "Inbox Late Task", status: "todo", due_date: "2026-10-28" },
@@ -1024,6 +1025,9 @@ test("collectOverdueTasks deduplicates standalone tasks, excludes done/archived/
     3: [
       { id: 301, project_id: 3, title: "Completed Proj Task", status: "todo", due_date: "2026-10-12" },
     ],
+    4: [
+      { id: 401, project_id: 4, title: "On Hold Proj Task", status: "todo", due_date: "2026-10-11" },
+    ],
     999: [
       { id: 901, project_id: 999, title: "Orphaned Archived Project Task", status: "todo", due_date: "2026-10-14" },
     ],
@@ -1041,6 +1045,12 @@ test("collectOverdueTasks deduplicates standalone tasks, excludes done/archived/
   assert.equal(overdue[0].isStandalone, true);
   assert.equal(overdue[1].projectName, "Active Launch");
   assert.equal(overdue[1].isStandalone, false);
+
+  const overdueProjs = filterProjectsByStatus(projects, "overdue", projectTasksMap, "2026-11-10");
+  assert.deepEqual(
+    overdueProjs.map((p) => p.id),
+    [1]
+  );
 });
 
 test("getOverdueNavigationTarget steps Prev/Next with wrap-around and resolves target year/month/date", () => {
