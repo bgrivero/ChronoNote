@@ -70,6 +70,7 @@ class Project(Base):
     description = Column(Text, default="")
     color = Column(String(20), default="#6366f1")
     icon = Column(String(40), default="folder")
+    area = Column(String(80), default="", nullable=False)
     status = Column(String(30), default="active", index=True)  # planned, active, on_hold, completed, archived
     is_pinned = Column(Boolean, default=False, index=True)
     sidebar_order = Column(Integer, default=0, index=True)
@@ -98,7 +99,10 @@ class Task(Base):
     color = Column(String(20), default="#0891b2")
     start_date = Column(Date, nullable=True, index=True)
     due_date = Column(Date, nullable=True, index=True)
+    start_time = Column(String(5), nullable=True)
+    end_time = Column(String(5), nullable=True)
     is_milestone = Column(Boolean, default=False)
+    deadline_only = Column(Boolean, default=False)
     depends_on_id = Column(Integer, ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True)
     progress = Column(Integer, default=0)  # 0..100
     created_at = Column(DateTime(timezone=True), default=utc_now)

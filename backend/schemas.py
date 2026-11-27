@@ -14,6 +14,7 @@ class ProjectCreate(BaseModel):
     description: str = ""
     color: str = "#6366f1"
     icon: str = "folder"
+    area: str = Field(default="", max_length=80)
     status: ProjectStatus = "active"
     is_pinned: bool = False
     sidebar_order: int = 0
@@ -26,6 +27,7 @@ class ProjectUpdate(BaseModel):
     description: str | None = None
     color: str | None = None
     icon: str | None = None
+    area: str | None = Field(default=None, max_length=80)
     status: ProjectStatus | None = None
     is_pinned: bool | None = None
     sidebar_order: int | None = None
@@ -46,6 +48,7 @@ class ProjectOut(BaseModel):
     description: str
     color: str
     icon: str
+    area: str = ""
     status: str
     is_pinned: bool
     sidebar_order: int
@@ -73,7 +76,10 @@ class TaskCreate(BaseModel):
     color: str = "#0891b2"
     start_date: date | None = None
     due_date: date | None = None
+    start_time: str | None = Field(default=None, max_length=5)
+    end_time: str | None = Field(default=None, max_length=5)
     is_milestone: bool = False
+    deadline_only: bool = False
     depends_on_id: int | None = None
     progress: int = Field(default=0, ge=0, le=100)
     cascade_dependencies: bool = True
@@ -88,7 +94,10 @@ class TaskUpdate(BaseModel):
     color: str | None = None
     start_date: date | None = None
     due_date: date | None = None
+    start_time: str | None = Field(default=None, max_length=5)
+    end_time: str | None = Field(default=None, max_length=5)
     is_milestone: bool | None = None
+    deadline_only: bool | None = None
     depends_on_id: int | None = None
     progress: int | None = Field(default=None, ge=0, le=100)
     cascade_dependencies: bool = True
@@ -108,7 +117,10 @@ class TaskOut(BaseModel):
     color: str = "#0891b2"
     start_date: date | None
     due_date: date | None
+    start_time: str | None = None
+    end_time: str | None = None
     is_milestone: bool
+    deadline_only: bool = False
     depends_on_id: int | None
     progress: int
     cascaded_task_ids: list[int] = []

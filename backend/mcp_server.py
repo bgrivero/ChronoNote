@@ -158,9 +158,17 @@ def _format_project(proj: Project, include_tasks: bool = False, include_notes: b
     total_tasks = len(tasks)
     completed_tasks = sum(1 for t in tasks if t.status == "done" or t.progress == 100)
     today = date.today()
-    overdue_tasks = sum(
-        1 for t in tasks if t.due_date is not None and t.due_date < today and t.status != "done"
-    )
+    if proj.status in ("completed", "done", "archived"):
+        overdue_tasks = 0
+    else:
+        overdue_tasks = sum(
+            1
+            for t in tasks
+            if t.due_date is not None
+            and t.due_date < today
+            and t.status != "done"
+            and (t.progress is None or t.progress < 100)
+        )
     progress_pct = round((completed_tasks / total_tasks) * 100.0, 1) if total_tasks > 0 else 0.0
 
     data: dict[str, Any] = {
@@ -170,6 +178,7 @@ def _format_project(proj: Project, include_tasks: bool = False, include_notes: b
         "description": proj.description or "",
         "color": proj.color or "#6366f1",
         "icon": proj.icon or "folder",
+        "area": proj.area or "",
         "status": proj.status or "active",
         "is_pinned": bool(proj.is_pinned),
         "sidebar_order": proj.sidebar_order or 0,
@@ -195,6 +204,8 @@ def _format_project(proj: Project, include_tasks: bool = False, include_notes: b
                 "color": t.color,
                 "start_date": t.start_date.isoformat() if t.start_date else None,
                 "due_date": t.due_date.isoformat() if t.due_date else None,
+                "start_time": t.start_time,
+                "end_time": t.end_time,
                 "is_milestone": bool(t.is_milestone),
                 "depends_on_id": t.depends_on_id,
                 "progress": t.progress or 0,

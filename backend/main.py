@@ -130,6 +130,21 @@ def _ensure_task_color_column() -> None:
                     conn.execute(
                         text("ALTER TABLE tasks ADD COLUMN user_id INTEGER NULL")
                     )
+            if "deadline_only" not in cols:
+                with engine.begin() as conn:
+                    conn.execute(
+                        text("ALTER TABLE tasks ADD COLUMN deadline_only BOOLEAN DEFAULT FALSE")
+                    )
+            if "start_time" not in cols:
+                with engine.begin() as conn:
+                    conn.execute(
+                        text("ALTER TABLE tasks ADD COLUMN start_time VARCHAR(5) NULL")
+                    )
+            if "end_time" not in cols:
+                with engine.begin() as conn:
+                    conn.execute(
+                        text("ALTER TABLE tasks ADD COLUMN end_time VARCHAR(5) NULL")
+                    )
             if engine.dialect.name == "postgresql":
                 with engine.begin() as conn:
                     try:
@@ -143,6 +158,9 @@ def _ensure_task_color_column() -> None:
             if "user_id" not in cols:
                 with engine.begin() as conn:
                     conn.execute(text("ALTER TABLE projects ADD COLUMN user_id INTEGER NULL"))
+            if "area" not in cols:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE projects ADD COLUMN area VARCHAR(80) DEFAULT ''"))
         if "notes" in table_names:
             cols = {c["name"] for c in insp.get_columns("notes")}
             if "user_id" not in cols:
@@ -226,11 +244,17 @@ def _compute_sidebar_project_item(
     tasks = project.tasks or []
     total_tasks = len(tasks)
     completed_tasks = sum(1 for t in tasks if t.status == "done" or t.progress == 100)
-    overdue_tasks = sum(
-        1
-        for t in tasks
-        if t.due_date is not None and t.due_date < today and t.status != "done"
-    )
+    if project.status in ("completed", "done", "archived"):
+        overdue_tasks = 0
+    else:
+        overdue_tasks = sum(
+            1
+            for t in tasks
+            if t.due_date is not None
+            and t.due_date < today
+            and t.status != "done"
+            and (t.progress is None or t.progress < 100)
+        )
     progress_pct = round((completed_tasks / total_tasks) * 100.0, 1) if total_tasks > 0 else 0.0
     note_count = len(project.notes or [])
 
@@ -241,6 +265,7 @@ def _compute_sidebar_project_item(
         description=project.description,
         color=project.color,
         icon=project.icon,
+        area=project.area or "",
         status=project.status,
         is_pinned=project.is_pinned,
         sidebar_order=project.sidebar_order,
@@ -1286,6 +1311,7 @@ def create_project(
         description=payload.description,
         color=payload.color,
         icon=payload.icon,
+        area=(payload.area or "").strip(),
         status=payload.status,
         is_pinned=payload.is_pinned,
         sidebar_order=payload.sidebar_order,
@@ -1426,6 +1452,9 @@ def update_project(
         base_slug = slugify(proj.name)
         proj.slug = _unique_project_slug(db, base_slug, exclude_id=proj.id)
 
+    if "area" in update_data:
+        update_data["area"] = (update_data["area"] or "").strip()
+
     for field, val in update_data.items():
         if field != "name":
             setattr(proj, field, val)
@@ -1496,7 +1525,10 @@ def create_task(
         color=payload.color,
         start_date=payload.start_date,
         due_date=payload.due_date,
+        start_time=payload.start_time,
+        end_time=payload.end_time,
         is_milestone=payload.is_milestone,
+        deadline_only=payload.deadline_only,
         depends_on_id=payload.depends_on_id,
         progress=progress,
     )
@@ -1542,7 +1574,17 @@ def list_tasks(
     if status_filter is not None:
         if status_filter == "overdue":
             today = date.today()
-            q = q.filter(Task.due_date.isnot(None), Task.due_date < today, Task.status != "done")
+            q = q.filter(
+                Task.due_date.isnot(None),
+                Task.due_date < today,
+                Task.status != "done",
+                or_(Task.progress.is_(None), Task.progress < 100),
+                or_(
+                    Task.project_id.is_(None),
+                    Project.status.is_(None),
+                    Project.status.notin_(["archived", "completed", "done"]),
+                ),
+            )
         else:
             q = q.filter(Task.status == status_filter)
 
@@ -3190,15 +3232,20 @@ def get_timeline_view(
 @app.get("/api/search", response_model=list[SearchResultItem])
 def unified_search(
     q: str = Query(..., min_length=1),
+    user: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
     term = q.strip().lower()
     like_pattern = f"%{term}%"
     results: list[SearchResultItem] = []
 
-    for p in db.query(Project).filter(
-        or_(Project.name.ilike(like_pattern), Project.description.ilike(like_pattern))
-    ).all():
+    for p in (
+        _scope_projects(db.query(Project), user)
+        .filter(
+            or_(Project.name.ilike(like_pattern), Project.description.ilike(like_pattern))
+        )
+        .all()
+    ):
         results.append(
             SearchResultItem(
                 kind="project",
@@ -3210,13 +3257,17 @@ def unified_search(
             )
         )
 
-    for n in db.query(Note).filter(
-        or_(
-            Note.title.ilike(like_pattern),
-            Note.content_md.ilike(like_pattern),
-            Note.tags_json.ilike(like_pattern),
+    for n in (
+        _scope_notes(db.query(Note), user)
+        .filter(
+            or_(
+                Note.title.ilike(like_pattern),
+                Note.content_md.ilike(like_pattern),
+                Note.tags_json.ilike(like_pattern),
+            )
         )
-    ).all():
+        .all()
+    ):
         tags = json.loads(n.tags_json or "[]")
         results.append(
             SearchResultItem(
@@ -3230,7 +3281,13 @@ def unified_search(
             )
         )
 
-    for t in db.query(Task).filter(
+    task_q = db.query(Task).outerjoin(Project, Task.project_id == Project.id)
+    if user is not None:
+        task_q = task_q.filter(or_(Task.user_id == user.id, Project.user_id == user.id))
+    else:
+        task_q = task_q.filter(and_(Task.user_id.is_(None), Project.user_id.is_(None)))
+
+    for t in task_q.filter(
         or_(Task.title.ilike(like_pattern), Task.description.ilike(like_pattern))
     ).all():
         results.append(
