@@ -34,6 +34,26 @@ const MONTH_NAMES_FULL = [
   "December",
 ];
 export const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/**
+ * Resolve the effective timeline start/due dates and display label for a task.
+ * When `deadline_only` is enabled, the task appears only on its due date (or start date if no due date).
+ */
+export function getTaskTimelineRange(task) {
+  if (task && task.deadline_only) {
+    const d = task.due_date || task.start_date;
+    return {
+      start: d,
+      due: d,
+      dateRangeText: d ? `Due ${d}` : "",
+    };
+  }
+  return {
+    start: task?.start_date || task?.due_date,
+    due: task?.due_date || task?.start_date,
+    dateRangeText: `${task?.start_date || ""} → ${task?.due_date || ""}`,
+  };
+}
 const WEEKDAY_FULL = [
   "Sunday",
   "Monday",
@@ -492,6 +512,455 @@ export function isProjectCompleted(project) {
 }
 
 /**
+ * Return local YYYY-MM-DD for fallback today comparisons without UTC day-shift.
+ * @returns {string}
+ */
+function getLocalTodayIsoFallback() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function isProjectSubtasksExpanded(projectId, visibleSubtaskProjectIds) {
+  if (
+    visibleSubtaskProjectIds === undefined ||
+    visibleSubtaskProjectIds === null
+  ) {
+    return true;
+  }
+  if (visibleSubtaskProjectIds instanceof Set) {
+    return visibleSubtaskProjectIds.has(projectId);
+  }
+  if (Array.isArray(visibleSubtaskProjectIds)) {
+    return visibleSubtaskProjectIds.includes(projectId);
+  }
+  return Boolean(visibleSubtaskProjectIds[projectId]);
+}
+
+function doesProjectMatchFilterMode(proj, taskFilterMode, projIsDone, overdueRefIso) {
+  if (taskFilterMode === "all") return true;
+  if (taskFilterMode === "active") return !projIsDone;
+  if (taskFilterMode === "done") return projIsDone;
+  if (taskFilterMode === "overdue") {
+    return Boolean(proj?.target_date && proj.target_date < overdueRefIso && !projIsDone);
+  }
+  return true;
+}
+
+function collectCandidateProjects(
+  pinnedProjects,
+  allProjects,
+  taskFilterMode,
+  visibleSubtaskProjectIds
+) {
+  const candidateProjects = [];
+  const seenProjIds = new Set();
+  for (const proj of pinnedProjects || []) {
+    if (proj && proj.status !== "archived" && !seenProjIds.has(proj.id)) {
+      seenProjIds.add(proj.id);
+      candidateProjects.push(proj);
+    }
+  }
+  for (const proj of allProjects || []) {
+    if (proj && !seenProjIds.has(proj.id) && proj.status !== "archived") {
+      const areSubtasksVisible =
+        taskFilterMode === "overdue" ||
+        isProjectSubtasksExpanded(proj.id, visibleSubtaskProjectIds);
+      if (areSubtasksVisible) {
+        seenProjIds.add(proj.id);
+        candidateProjects.push(proj);
+      }
+    }
+  }
+  return candidateProjects;
+}
+
+/**
+ * Return true if a task has a due_date strictly before today and is not completed.
+ * @param {Object | null | undefined} task
+ * @param {string | null} [referenceDateIso]
+ * @returns {boolean}
+ */
+export function isTaskOverdue(task, referenceDateIso = null) {
+  if (!task || !task.due_date || task.status === "done" || task.progress === 100) {
+    return false;
+  }
+  const today = referenceDateIso || getLocalTodayIsoFallback();
+  return task.due_date < today;
+}
+
+/**
+ * Collect and deduplicate all genuinely overdue tasks across standalone inbox and active projects.
+ * Excludes completed/archived projects, completed tasks (status === "done" or progress === 100),
+ * and orphaned tasks whose project is missing from the workspace list.
+ * Sorted chronologically by due_date ascending, then start_date, then id.
+ *
+ * @param {Object<string|number, Array<Object>>} [projectTasksMap]
+ * @param {Array<Object>} [standaloneTasks]
+ * @param {Array<Object>} [projects]
+ * @param {string | null} [referenceDateIso]
+ * @returns {Array<Object>}
+ */
+export function collectOverdueTasks(
+  projectTasksMap = {},
+  standaloneTasks = [],
+  projects = [],
+  referenceDateIso = null
+) {
+  const today = referenceDateIso || getLocalTodayIsoFallback();
+  const projectsById = new Map();
+  for (const proj of projects || []) {
+    if (proj && proj.id !== undefined && proj.id !== null) {
+      projectsById.set(String(proj.id), proj);
+    }
+  }
+
+  const seenKeys = new Set();
+  const overdue = [];
+
+  const considerTask = (task, fallbackPid = null) => {
+    if (!task || !isTaskOverdue(task, today)) return;
+    const dedupeKey =
+      task.id !== undefined && task.id !== null
+        ? `id:${task.id}`
+        : `anon:${task.project_id ?? fallbackPid ?? "inbox"}:${task.title || ""}:${task.start_date || ""}:${task.due_date || ""}`;
+    if (seenKeys.has(dedupeKey)) return;
+    seenKeys.add(dedupeKey);
+
+    const hasOwnPid =
+      task.project_id !== undefined &&
+      task.project_id !== null &&
+      task.project_id !== 0 &&
+      task.project_id !== "0";
+    const hasFallbackPid =
+      fallbackPid !== undefined &&
+      fallbackPid !== null &&
+      fallbackPid !== 0 &&
+      fallbackPid !== "0";
+    const rawPid = hasOwnPid ? task.project_id : hasFallbackPid ? fallbackPid : null;
+
+    if (rawPid !== null) {
+      const proj = projectsById.get(String(rawPid));
+      if (!proj || proj.status === "archived" || isProjectCompleted(proj)) {
+        return;
+      }
+      overdue.push({
+        ...task,
+        project_id: proj.id,
+        projectName: proj.name || "Project",
+        displayColor: task.color || proj.color || "#2c666e",
+        isStandalone: false,
+      });
+    } else {
+      overdue.push({
+        ...task,
+        project_id: null,
+        projectName: "Inbox",
+        displayColor: task.color || "#e11d48",
+        isStandalone: true,
+      });
+    }
+  };
+
+  for (const task of standaloneTasks || []) {
+    considerTask(task, null);
+  }
+
+  for (const [mapKey, tasks] of Object.entries(projectTasksMap || {})) {
+    const mapPid =
+      mapKey === "0" || mapKey === "null" || mapKey === "undefined"
+        ? null
+        : mapKey;
+    for (const task of tasks || []) {
+      considerTask(task, mapPid);
+    }
+  }
+
+  overdue.sort((a, b) => {
+    const dueCmp = (a.due_date || "").localeCompare(b.due_date || "");
+    if (dueCmp !== 0) return dueCmp;
+    const startCmp = (a.start_date || "").localeCompare(b.start_date || "");
+    if (startCmp !== 0) return startCmp;
+    return Number(a.id || 0) - Number(b.id || 0);
+  });
+
+  return overdue;
+}
+
+/**
+ * Resolve the target overdue task and calendar coordinates for Prev/Next navigation.
+ * Wraps cleanly around the sorted overdue task list.
+ *
+ * @param {Array<Object>} [overdueTasks]
+ * @param {number} [currentIndex]
+ * @param {number} [delta]
+ */
+export function getOverdueNavigationTarget(
+  overdueTasks = [],
+  currentIndex = 0,
+  delta = 0
+) {
+  const list = Array.isArray(overdueTasks) ? overdueTasks : [];
+  const len = list.length;
+  if (len === 0) {
+    return {
+      index: 0,
+      task: null,
+      targetDateIso: null,
+      year: null,
+      month: null,
+    };
+  }
+
+  const safeBase = Number.isFinite(currentIndex)
+    ? ((Math.trunc(currentIndex) % len) + len) % len
+    : 0;
+  const safeDelta = Number.isFinite(delta) ? Math.trunc(delta) : 0;
+  const nextIndex = (((safeBase + safeDelta) % len) + len) % len;
+  const task = list[nextIndex] || null;
+  const targetDateIso = task?.due_date || task?.start_date || null;
+
+  let year = null;
+  let month = null;
+  if (typeof targetDateIso === "string") {
+    const match = targetDateIso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (match) {
+      year = Number.parseInt(match[1], 10);
+      month = Number.parseInt(match[2], 10);
+    }
+  }
+
+  return {
+    index: nextIndex,
+    task,
+    targetDateIso,
+    year,
+    month,
+  };
+}
+
+/**
+ * Parse an "HH:MM" 24-hour time string into minutes since midnight (0..1439).
+ * Returns null if missing or invalid.
+ * @param {string | null | undefined} hhmm
+ * @returns {number | null}
+ */
+export function parseTimeToMinutes(hhmm) {
+  if (!hhmm || typeof hhmm !== "string") return null;
+  const match = hhmm.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const hours = Number.parseInt(match[1], 10);
+  const mins = Number.parseInt(match[2], 10);
+  if (Number.isNaN(hours) || Number.isNaN(mins) || hours < 0 || hours > 23 || mins < 0 || mins > 59) {
+    return null;
+  }
+  return hours * 60 + mins;
+}
+
+/**
+ * Format minutes since midnight (0..1439) back into zero-padded "HH:MM".
+ * @param {number} totalMinutes
+ * @returns {string}
+ */
+export function formatMinutesToTime(totalMinutes) {
+  const safe = Number.isFinite(totalMinutes) ? Math.round(totalMinutes) : 0;
+  const clamped = Math.min(Math.max(safe, 0), 1439);
+  const hh = String(Math.floor(clamped / 60)).padStart(2, "0");
+  const mm = String(clamped % 60).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
+/**
+ * Format an "HH:MM" string into compact human-readable 12-hour text (e.g. "9 AM", "2:30 PM").
+ * Returns "" if invalid.
+ * @param {string | null | undefined} hhmm
+ * @returns {string}
+ */
+export function formatTimeDisplay(hhmm) {
+  const total = parseTimeToMinutes(hhmm);
+  if (total === null) return "";
+  const h24 = Math.floor(total / 60);
+  const mins = total % 60;
+  const period = h24 >= 12 ? "PM" : "AM";
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  if (mins === 0) return `${h12} ${period}`;
+  return `${h12}:${String(mins).padStart(2, "0")} ${period}`;
+}
+
+/**
+ * Snap minutes to the nearest `step` interval, clamped within [0, 1440].
+ * @param {number} minutes
+ * @param {number} [step]
+ * @returns {number}
+ */
+export function snapMinutes(minutes, step = 15) {
+  const s = Math.max(1, Math.round(step));
+  const raw = Number.isFinite(minutes) ? minutes : 0;
+  const snapped = Math.round(raw / s) * s;
+  return Math.min(Math.max(snapped, 0), 1440);
+}
+
+/**
+ * Return true if a task has a valid explicit start_time.
+ * @param {Object | null | undefined} task
+ * @returns {boolean}
+ */
+export function isTimedTask(task) {
+  return parseTimeToMinutes(task?.start_time) !== null;
+}
+
+/**
+ * Compute side-by-side non-overlapping column layout for timed tasks on a single day.
+ * @param {Array<Object>} tasksForDay
+ * @param {number} [hourHeightPx]
+ */
+export function computeTimedBlockLayout(tasksForDay = [], hourHeightPx = 56) {
+  const timed = [];
+  for (const task of tasksForDay || []) {
+    const startMin = parseTimeToMinutes(task?.start_time);
+    if (startMin === null) continue;
+    const rawEnd = parseTimeToMinutes(task?.end_time);
+    const defaultEnd = Math.min(startMin + 60, 1440);
+    const endMin =
+      rawEnd !== null && rawEnd > startMin
+        ? Math.max(rawEnd, Math.min(startMin + 15, 1440))
+        : Math.max(defaultEnd, Math.min(startMin + 15, 1440));
+    timed.push({
+      task,
+      startMin,
+      endMin,
+      durationMin: Math.max(endMin - startMin, 15),
+    });
+  }
+
+  timed.sort((a, b) => {
+    if (a.startMin !== b.startMin) return a.startMin - b.startMin;
+    if (b.durationMin !== a.durationMin) return b.durationMin - a.durationMin;
+    return Number(a.task?.id || 0) - Number(b.task?.id || 0);
+  });
+
+  // Partition into overlap clusters, then pack greedily into columns per cluster
+  const clusters = [];
+  let activeCluster = null;
+  for (const item of timed) {
+    if (!activeCluster || item.startMin >= activeCluster.maxEnd) {
+      activeCluster = { items: [item], maxEnd: item.endMin };
+      clusters.push(activeCluster);
+    } else {
+      activeCluster.items.push(item);
+      activeCluster.maxEnd = Math.max(activeCluster.maxEnd, item.endMin);
+    }
+  }
+
+  const laidOut = [];
+  for (const cluster of clusters) {
+    const colEndMins = [];
+    const placed = [];
+    for (const item of cluster.items) {
+      let colIndex = colEndMins.findIndex((endMin) => item.startMin >= endMin);
+      if (colIndex === -1) {
+        colIndex = colEndMins.length;
+        colEndMins.push(item.endMin);
+      } else {
+        colEndMins[colIndex] = item.endMin;
+      }
+      placed.push({ item, colIndex });
+    }
+    const colCount = Math.max(colEndMins.length, 1);
+    for (const { item, colIndex } of placed) {
+      const topPx = (item.startMin / 60) * hourHeightPx;
+      const heightPx = Math.max(((item.endMin - item.startMin) / 60) * hourHeightPx, 20);
+      const leftPct = (colIndex / colCount) * 100;
+      const widthPct = 100 / colCount;
+      const startLabel = formatTimeDisplay(formatMinutesToTime(item.startMin));
+      const endLabel =
+        item.endMin >= 1440
+          ? "12 AM"
+          : formatTimeDisplay(formatMinutesToTime(item.endMin));
+      laidOut.push({
+        task: item.task,
+        startMin: item.startMin,
+        endMin: item.endMin,
+        topPx,
+        heightPx,
+        colIndex,
+        colCount,
+        leftPct,
+        widthPct,
+        timeRangeLabel: `${startLabel} – ${endLabel}`,
+      });
+    }
+  }
+
+  return laidOut;
+}
+
+/**
+ * Extract sorted unique non-empty project areas/folders.
+ * @param {Array<Object>} projects
+ * @returns {Array<string>}
+ */
+export function extractProjectAreas(projects = []) {
+  const seen = new Set();
+  for (const p of projects || []) {
+    if (!p || p.status === "archived") continue;
+    const area = (p.area || "").trim();
+    if (area) seen.add(area);
+  }
+  return Array.from(seen).sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * Bucket non-archived projects into Pinned, Active, Later (planned/on_hold), and Completed,
+ * applying optional text search and area filter.
+ * @param {Array<Object>} projects
+ * @param {{ query?: string, area?: string }} [options]
+ */
+export function groupSidebarProjects(projects = [], options = {}) {
+  const query = (options.query || "").trim().toLowerCase();
+  const areaFilter = options.area || "all";
+
+  const buckets = {
+    pinned: [],
+    active: [],
+    later: [],
+    completed: [],
+  };
+
+  for (const p of projects || []) {
+    if (!p || p.status === "archived") continue;
+    const projArea = (p.area || "").trim();
+
+    if (areaFilter && areaFilter !== "all") {
+      if (areaFilter === "__none__") {
+        if (projArea) continue;
+      } else if (projArea !== areaFilter) {
+        continue;
+      }
+    }
+
+    if (query) {
+      const hay = `${p.name || ""} ${p.description || ""} ${projArea}`.toLowerCase();
+      if (!hay.includes(query)) continue;
+    }
+
+    if (isProjectCompleted(p)) {
+      buckets.completed.push(p);
+    } else if (p.is_pinned) {
+      buckets.pinned.push(p);
+    } else if (p.status === "planned" || p.status === "on_hold") {
+      buckets.later.push(p);
+    } else {
+      buckets.active.push(p);
+    }
+  }
+
+  return buckets;
+}
+
+/**
  * Filter a list of projects by status filter mode ('all' | 'active' | 'done' | 'overdue').
  * @param {Array<Object>} projects
  * @param {'all' | 'active' | 'done' | 'overdue'} filterMode
@@ -507,13 +976,12 @@ export function filterProjectsByStatus(projects, filterMode = "active", projectT
     return list.filter((p) => isProjectCompleted(p));
   }
   if (filterMode === "overdue") {
-    const today = referenceDateIso || new Date().toISOString().split("T")[0];
+    const today = referenceDateIso || getLocalTodayIsoFallback();
     return list.filter((p) => {
-      if (p.target_date && p.target_date < today && !isProjectCompleted(p)) return true;
+      if (isProjectCompleted(p)) return false;
+      if (p.target_date && p.target_date < today) return true;
       const tasks = projectTasksMap[p.id] || [];
-      return tasks.some(
-        (t) => t.due_date && t.due_date < today && t.status !== "done" && t.progress !== 100
-      );
+      return tasks.some((t) => isTaskOverdue(t, today));
     });
   }
   return list;
@@ -534,10 +1002,8 @@ export function filterSubtasksByStatus(tasks, filterMode = "all", referenceDateI
     return list.filter((t) => t.status === "done" || t.progress === 100);
   }
   if (filterMode === "overdue") {
-    const today = referenceDateIso || new Date().toISOString().split("T")[0];
-    return list.filter(
-      (t) => t.due_date && t.due_date < today && t.status !== "done" && t.progress !== 100
-    );
+    const today = referenceDateIso || getLocalTodayIsoFallback();
+    return list.filter((t) => isTaskOverdue(t, today));
   }
   return list;
 }
@@ -563,6 +1029,7 @@ export function buildMonthlyWeekRows(
   const taskFilterMode = options.taskFilterMode || "all";
   const dailyNotesMap = options.dailyNotesMap || {};
   const todayIso = options.todayIso || "";
+  const overdueRefIso = options.todayIso || getLocalTodayIsoFallback();
   const firstDayUtc = Date.UTC(year, month - 1, 1);
   const lastDayDate = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const lastDayUtc = Date.UTC(year, month - 1, lastDayDate);
@@ -618,38 +1085,19 @@ export function buildMonthlyWeekRows(
     // Collect all project spans and task bars that overlap this 7-day week
     const rawItems = [];
 
-    const candidateProjects = [];
-    const seenProjIds = new Set();
-    for (const proj of pinnedProjects || []) {
-      if (proj && !seenProjIds.has(proj.id)) {
-        seenProjIds.add(proj.id);
-        candidateProjects.push(proj);
-      }
-    }
-    const allProjList = options.allProjects || [];
-    for (const proj of allProjList) {
-      if (proj && !seenProjIds.has(proj.id) && proj.status !== "archived") {
-        const areSubtasksVisible =
-          options.visibleSubtaskProjectIds === undefined ||
-          options.visibleSubtaskProjectIds === null ||
-          (options.visibleSubtaskProjectIds instanceof Set
-            ? options.visibleSubtaskProjectIds.has(proj.id)
-            : Array.isArray(options.visibleSubtaskProjectIds)
-            ? options.visibleSubtaskProjectIds.includes(proj.id)
-            : Boolean(options.visibleSubtaskProjectIds[proj.id]));
-        if (areSubtasksVisible) {
-          seenProjIds.add(proj.id);
-          candidateProjects.push(proj);
-        }
-      }
-    }
+    const candidateProjects = collectCandidateProjects(
+      pinnedProjects,
+      options.allProjects,
+      taskFilterMode,
+      options.visibleSubtaskProjectIds
+    );
 
     for (let pIdx = 0; pIdx < candidateProjects.length; pIdx += 1) {
       const proj = candidateProjects[pIdx];
       const projIsDone = isProjectCompleted(proj);
 
-      // In 'active' filter mode, finished projects (and their subtasks) are hidden
-      if (taskFilterMode === "active" && projIsDone) {
+      // In 'active' or 'overdue' filter mode, finished projects (and their subtasks) are hidden
+      if ((taskFilterMode === "active" || taskFilterMode === "overdue") && projIsDone) {
         continue;
       }
 
@@ -663,13 +1111,16 @@ export function buildMonthlyWeekRows(
       // 1. Project Span Bar in this week:
       // Show ONLY if the original project is pinned/visible on timeline
       const isOriginalProjectVisible = proj.is_pinned !== false && proj.status !== "archived";
+      const matchesProjectFilter = doesProjectMatchFilterMode(
+        proj,
+        taskFilterMode,
+        projIsDone,
+        overdueRefIso
+      );
       const shouldShowProjectBar =
         isOriginalProjectVisible &&
         !isMilestoneOnly &&
-        (taskFilterMode === "all" ||
-          (taskFilterMode === "active" && !projIsDone) ||
-          (taskFilterMode === "done" && projIsDone) ||
-          (taskFilterMode === "overdue" && proj.target_date && proj.target_date < todayIso && !projIsDone));
+        matchesProjectFilter;
 
       if (shouldShowProjectBar) {
         const pGeom = computeTimelineBarGeometry(
@@ -696,7 +1147,12 @@ export function buildMonthlyWeekRows(
             isClippedRight: pGeom.isClippedRight,
           });
         }
-      } else if (isMilestoneOnly && proj.target_date && isOriginalProjectVisible) {
+      } else if (
+        isMilestoneOnly &&
+        proj.target_date &&
+        isOriginalProjectVisible &&
+        matchesProjectFilter
+      ) {
         // Milestone Layer: long multi-month spans are replaced by a target delivery milestone pin
         const pTargetGeom = computeTimelineBarGeometry(
           proj.target_date,
@@ -726,38 +1182,35 @@ export function buildMonthlyWeekRows(
         }
       }
 
-      // 2. Tasks belonging to this project in this week (if subtasks are optionally visible)
+      // 2. Tasks belonging to this project in this week (if subtasks are optionally visible or filtering overdue)
       const areSubtasksVisible =
-        options.visibleSubtaskProjectIds === undefined ||
-        options.visibleSubtaskProjectIds === null ||
-        (options.visibleSubtaskProjectIds instanceof Set
-          ? options.visibleSubtaskProjectIds.has(proj.id)
-          : Array.isArray(options.visibleSubtaskProjectIds)
-          ? options.visibleSubtaskProjectIds.includes(proj.id)
-          : Boolean(options.visibleSubtaskProjectIds[proj.id]));
+        taskFilterMode === "overdue" ||
+        isProjectSubtasksExpanded(proj.id, options.visibleSubtaskProjectIds);
 
       if (areSubtasksVisible) {
         const pTasksRaw = (projectTasksMap[proj.id] || []).map((t, idx) => ({
           ...t,
           code: t.is_milestone ? "◆" : (t.code || `${prefix}${idx + 1}`),
         }));
-        const pTasks = filterSubtasksByStatus(pTasksRaw, taskFilterMode, todayIso);
+        const pTasks = filterSubtasksByStatus(pTasksRaw, taskFilterMode, overdueRefIso);
 
         for (let tIdx = 0; tIdx < pTasks.length; tIdx += 1) {
           const task = pTasks[tIdx];
+          const taskRange = getTaskTimelineRange(task);
           const tGeom = computeTimelineBarGeometry(
-            task.start_date || task.due_date,
-            task.due_date || task.start_date,
+            taskRange.start,
+            taskRange.due,
             weekStartIso,
             weekEndIso
           );
           if (tGeom.visible) {
             const isMilestone = Boolean(task.is_milestone);
-            const isOverdue = Boolean(task.due_date && task.due_date < todayIso && task.status !== "done");
+            const isOverdue = isTaskOverdue(task, overdueRefIso);
             rawItems.push({
               uid: `task-${task.id}-w${w + 1}`,
               kind: isMilestone ? "milestone" : "task",
               isMilestone,
+              isDeadlineOnly: Boolean(task.deadline_only),
               isOverdue,
               taskId: task.id,
               projectId: proj.id,
@@ -766,7 +1219,10 @@ export function buildMonthlyWeekRows(
               title: isMilestone ? `◆ ${task.title}` : task.title,
               status: task.status || "todo",
               color: task.color || "#0891b2",
-              dateRangeText: `${task.start_date || ""} → ${task.due_date || ""}`,
+              startTime: task.start_time || null,
+              endTime: task.end_time || null,
+              timePrefix: formatTimeDisplay(task.start_time),
+              dateRangeText: taskRange.dateRangeText,
               startCol: tGeom.startCol,
               spanCols: tGeom.spanCols,
               endCol: tGeom.startCol + tGeom.spanCols - 1,
@@ -783,21 +1239,23 @@ export function buildMonthlyWeekRows(
       ...t,
       code: t.is_milestone ? "◆" : (t.code || ""),
     }));
-    const standaloneFiltered = filterSubtasksByStatus(standaloneTasksRaw, taskFilterMode, todayIso);
+    const standaloneFiltered = filterSubtasksByStatus(standaloneTasksRaw, taskFilterMode, overdueRefIso);
     for (const task of standaloneFiltered) {
+      const taskRange = getTaskTimelineRange(task);
       const sGeom = computeTimelineBarGeometry(
-        task.start_date || task.due_date,
-        task.due_date || task.start_date,
+        taskRange.start,
+        taskRange.due,
         weekStartIso,
         weekEndIso
       );
       if (sGeom.visible) {
         const isMilestone = Boolean(task.is_milestone);
-        const isOverdue = Boolean(task.due_date && task.due_date < todayIso && task.status !== "done");
+        const isOverdue = isTaskOverdue(task, overdueRefIso);
         rawItems.push({
           uid: `standalone-task-${task.id}-w${w + 1}`,
           kind: isMilestone ? "milestone" : "task",
           isMilestone,
+          isDeadlineOnly: Boolean(task.deadline_only),
           isStandalone: true,
           isOverdue,
           taskId: task.id,
@@ -807,7 +1265,10 @@ export function buildMonthlyWeekRows(
           title: isMilestone ? `◆ ${task.title}` : task.title,
           status: task.status || "todo",
           color: task.color || "#e11d48",
-          dateRangeText: `${task.start_date || ""} → ${task.due_date || ""}`,
+          startTime: task.start_time || null,
+          endTime: task.end_time || null,
+          timePrefix: formatTimeDisplay(task.start_time),
+          dateRangeText: taskRange.dateRangeText,
           startCol: sGeom.startCol,
           spanCols: sGeom.spanCols,
           endCol: sGeom.startCol + sGeom.spanCols - 1,
@@ -874,6 +1335,7 @@ export function buildFocusedWeekRow(
   const taskFilterMode = options.taskFilterMode || "all";
   const dailyNotesMap = options.dailyNotesMap || {};
   const todayIso = options.todayIso || "";
+  const overdueRefIso = options.todayIso || getLocalTodayIsoFallback();
   const visibleSubtaskProjectIds = options.visibleSubtaskProjectIds;
 
   const anchorUtc =
@@ -919,37 +1381,18 @@ export function buildFocusedWeekRow(
 
   const rawItems = [];
 
-  const candidateProjects = [];
-  const seenProjIds = new Set();
-  for (const proj of pinnedProjects || []) {
-    if (proj && !seenProjIds.has(proj.id)) {
-      seenProjIds.add(proj.id);
-      candidateProjects.push(proj);
-    }
-  }
-  const allProjList = options.allProjects || [];
-  for (const proj of allProjList) {
-    if (proj && !seenProjIds.has(proj.id) && proj.status !== "archived") {
-      const areSubtasksVisible =
-        visibleSubtaskProjectIds === undefined ||
-        visibleSubtaskProjectIds === null ||
-        (visibleSubtaskProjectIds instanceof Set
-          ? visibleSubtaskProjectIds.has(proj.id)
-          : Array.isArray(visibleSubtaskProjectIds)
-          ? visibleSubtaskProjectIds.includes(proj.id)
-          : Boolean(visibleSubtaskProjectIds[proj.id]));
-      if (areSubtasksVisible) {
-        seenProjIds.add(proj.id);
-        candidateProjects.push(proj);
-      }
-    }
-  }
+  const candidateProjects = collectCandidateProjects(
+    pinnedProjects,
+    options.allProjects,
+    taskFilterMode,
+    visibleSubtaskProjectIds
+  );
 
   for (let pIdx = 0; pIdx < candidateProjects.length; pIdx += 1) {
     const proj = candidateProjects[pIdx];
     const projIsDone = isProjectCompleted(proj);
 
-    if (taskFilterMode === "active" && projIsDone) {
+    if ((taskFilterMode === "active" || taskFilterMode === "overdue") && projIsDone) {
       continue;
     }
 
@@ -960,13 +1403,16 @@ export function buildFocusedWeekRow(
     const isMilestoneOnly = projectDisplayMode === "milestones";
 
     const isOriginalProjectVisible = proj.is_pinned !== false && proj.status !== "archived";
+    const matchesProjectFilter = doesProjectMatchFilterMode(
+      proj,
+      taskFilterMode,
+      projIsDone,
+      overdueRefIso
+    );
     const shouldShowProjectBar =
       isOriginalProjectVisible &&
       !isMilestoneOnly &&
-      (taskFilterMode === "all" ||
-        (taskFilterMode === "active" && !projIsDone) ||
-        (taskFilterMode === "done" && projIsDone) ||
-        (taskFilterMode === "overdue" && proj.target_date && proj.target_date < todayIso && !projIsDone));
+      matchesProjectFilter;
 
     if (shouldShowProjectBar) {
       const pGeom = computeTimelineBarGeometry(
@@ -993,7 +1439,12 @@ export function buildFocusedWeekRow(
           isClippedRight: pGeom.isClippedRight,
         });
       }
-    } else if (isMilestoneOnly && proj.target_date && isOriginalProjectVisible) {
+    } else if (
+      isMilestoneOnly &&
+      proj.target_date &&
+      isOriginalProjectVisible &&
+      matchesProjectFilter
+    ) {
       const pTargetGeom = computeTimelineBarGeometry(
         proj.target_date,
         proj.target_date,
@@ -1023,36 +1474,33 @@ export function buildFocusedWeekRow(
     }
 
     const areSubtasksVisible =
-      visibleSubtaskProjectIds === undefined ||
-      visibleSubtaskProjectIds === null ||
-      (visibleSubtaskProjectIds instanceof Set
-        ? visibleSubtaskProjectIds.has(proj.id)
-        : Array.isArray(visibleSubtaskProjectIds)
-        ? visibleSubtaskProjectIds.includes(proj.id)
-        : Boolean(visibleSubtaskProjectIds[proj.id]));
+      taskFilterMode === "overdue" ||
+      isProjectSubtasksExpanded(proj.id, visibleSubtaskProjectIds);
 
     if (areSubtasksVisible) {
       const pTasksRaw = (projectTasksMap[proj.id] || []).map((t, idx) => ({
         ...t,
         code: t.is_milestone ? "◆" : (t.code || `${prefix}${idx + 1}`),
       }));
-      const pTasks = filterSubtasksByStatus(pTasksRaw, taskFilterMode, todayIso);
+      const pTasks = filterSubtasksByStatus(pTasksRaw, taskFilterMode, overdueRefIso);
 
       for (let tIdx = 0; tIdx < pTasks.length; tIdx += 1) {
         const task = pTasks[tIdx];
+        const taskRange = getTaskTimelineRange(task);
         const tGeom = computeTimelineBarGeometry(
-          task.start_date || task.due_date,
-          task.due_date || task.start_date,
+          taskRange.start,
+          taskRange.due,
           weekStartIso,
           weekEndIso
         );
         if (tGeom.visible) {
           const isMilestone = Boolean(task.is_milestone);
-          const isOverdue = Boolean(task.due_date && task.due_date < todayIso && task.status !== "done");
+          const isOverdue = isTaskOverdue(task, overdueRefIso);
           rawItems.push({
             uid: `week-task-${task.id}`,
             kind: isMilestone ? "milestone" : "task",
             isMilestone,
+            isDeadlineOnly: Boolean(task.deadline_only),
             isOverdue,
             taskId: task.id,
             projectId: proj.id,
@@ -1061,7 +1509,10 @@ export function buildFocusedWeekRow(
             title: isMilestone ? `◆ ${task.title}` : task.title,
             status: task.status || "todo",
             color: task.color || "#0891b2",
-            dateRangeText: `${task.start_date || ""} → ${task.due_date || ""}`,
+            startTime: task.start_time || null,
+            endTime: task.end_time || null,
+            timePrefix: formatTimeDisplay(task.start_time),
+            dateRangeText: taskRange.dateRangeText,
             startCol: tGeom.startCol,
             spanCols: tGeom.spanCols,
             endCol: tGeom.startCol + tGeom.spanCols - 1,
@@ -1078,21 +1529,23 @@ export function buildFocusedWeekRow(
     ...t,
     code: t.is_milestone ? "◆" : (t.code || ""),
   }));
-  const standaloneFiltered = filterSubtasksByStatus(standaloneTasksRaw, taskFilterMode, todayIso);
+  const standaloneFiltered = filterSubtasksByStatus(standaloneTasksRaw, taskFilterMode, overdueRefIso);
   for (const task of standaloneFiltered) {
+    const taskRange = getTaskTimelineRange(task);
     const sGeom = computeTimelineBarGeometry(
-      task.start_date || task.due_date,
-      task.due_date || task.start_date,
+      taskRange.start,
+      taskRange.due,
       weekStartIso,
       weekEndIso
     );
     if (sGeom.visible) {
       const isMilestone = Boolean(task.is_milestone);
-      const isOverdue = Boolean(task.due_date && task.due_date < todayIso && task.status !== "done");
+      const isOverdue = isTaskOverdue(task, overdueRefIso);
       rawItems.push({
         uid: `week-standalone-task-${task.id}`,
         kind: isMilestone ? "milestone" : "task",
         isMilestone,
+        isDeadlineOnly: Boolean(task.deadline_only),
         isStandalone: true,
         isOverdue,
         taskId: task.id,
@@ -1102,7 +1555,10 @@ export function buildFocusedWeekRow(
         title: isMilestone ? `◆ ${task.title}` : task.title,
         status: task.status || "todo",
         color: task.color || "#e11d48",
-        dateRangeText: `${task.start_date || ""} → ${task.due_date || ""}`,
+        startTime: task.start_time || null,
+        endTime: task.end_time || null,
+        timePrefix: formatTimeDisplay(task.start_time),
+        dateRangeText: taskRange.dateRangeText,
         startCol: sGeom.startCol,
         spanCols: sGeom.spanCols,
         endCol: sGeom.startCol + sGeom.spanCols - 1,
@@ -1547,6 +2003,7 @@ export function renderMarkdownPreviewHtml(markdownText) {
   const out = [];
   let inUl = false;
   let inOl = false;
+  let taskIdx = 0;
 
   function closeLists() {
     if (inUl) {
@@ -1607,10 +2064,11 @@ export function renderMarkdownPreviewHtml(markdownText) {
       closeLists();
       const checked = taskMatch[1].toLowerCase() === "x";
       const taskText = formatInline(taskMatch[2].trim());
+      const currentTaskIdx = taskIdx++;
       out.push(
-        `<div class="md-task-row ${checked ? "is-done" : ""}"><input type="checkbox" ${
+        `<div class="md-task-row ${checked ? "is-done" : ""}"><input type="checkbox" class="md-task-checkbox" data-md-task-index="${currentTaskIdx}" ${
           checked ? "checked" : ""
-        } readonly /><span>${taskText}</span></div>`
+        } /><span>${taskText}</span></div>`
       );
       continue;
     }
@@ -1658,4 +2116,41 @@ export function renderMarkdownPreviewHtml(markdownText) {
   }
 
   return result;
+}
+
+
+/**
+ * Toggle the Nth Markdown checklist item (- [ ] / - [x]) outside fenced code blocks.
+ * Preserves original line endings.
+ * @param {string} markdownText
+ * @param {number} targetTaskIndex
+ * @returns {string}
+ */
+export function toggleMarkdownCheckboxByIndex(markdownText, targetTaskIndex) {
+  if (!markdownText || !Number.isInteger(targetTaskIndex) || targetTaskIndex < 0) {
+    return markdownText || "";
+  }
+  const eol = markdownText.includes("\r\n") ? "\r\n" : "\n";
+  const lines = markdownText.split(/\r?\n/);
+  let inCodeFence = false;
+  let seenIdx = 0;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (/^\s*```/.test(line)) {
+      inCodeFence = !inCodeFence;
+      continue;
+    }
+    if (inCodeFence) continue;
+    const match = line.match(/^(\s*[-*+]\s+\[)([ xX])(\]\s+.*)$/);
+    if (!match) continue;
+    if (seenIdx === targetTaskIndex) {
+      const nextMark = match[2].toLowerCase() === "x" ? " " : "x";
+      lines[i] = `${match[1]}${nextMark}${match[3]}`;
+      break;
+    }
+    seenIdx += 1;
+  }
+
+  return lines.join(eol);
 }

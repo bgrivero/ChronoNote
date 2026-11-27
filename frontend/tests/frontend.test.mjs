@@ -7,26 +7,39 @@ import {
   buildFocusedWeekRow,
   calculateDateSpanDays,
   cascadeDependentTasksClient,
+  collectOverdueTasks,
   computeDependencyBezierPath,
   computeKnowledgeGraphLayout,
+  computeTimedBlockLayout,
   computeTimelineBarGeometry,
   computeYearMonthGridSpan,
   extractJournalSnippet,
+  extractProjectAreas,
   filterProjectsByStatus,
   filterSubtasksByStatus,
   formatEditorialDate,
+  formatMinutesToTime,
+  formatTimeDisplay,
+  getOverdueNavigationTarget,
   groupProjectsForKanban,
+  groupSidebarProjects,
   groupTasksForKanban,
   isProjectCompleted,
+  isTaskOverdue,
+  isTimedTask,
   moveProjectInKanban,
   packSwimlaneTaskCards,
+  parseTimeToMinutes,
   partitionSidebarProjects,
   renderMarkdownPreviewHtml,
   shiftDateIso,
   shiftDateMonths,
+  snapMinutes,
+  toggleMarkdownCheckboxByIndex,
   clipSubtaskToProjectRange,
   computeProjectDragResult,
   computeSubtaskDragResult,
+  getTaskTimelineRange,
 } from "../src/composables/useTimelineGeometry.js";
 import {
   appendOcrToMarkdown,
@@ -946,7 +959,299 @@ test("Custom paper themes, typography pairings, and style classes", () => {
   assert.equal(getTypographyClass("invalid"), "font-theme-editorial");
 });
 
+test("Subtask deadline_only option renders only on due date in Month and Week timelines", () => {
+  const task = {
+    id: 501,
+    title: "Final submission",
+    start_date: "2026-11-02",
+    due_date: "2026-11-18",
+    status: "todo",
+    deadline_only: true,
+  };
+  const range = getTaskTimelineRange(task);
+  assert.equal(range.start, "2026-11-18");
+  assert.equal(range.due, "2026-11-18");
+  assert.equal(range.dateRangeText, "Due 2026-11-18");
+
+  const projects = [
+    { id: 1, name: "Roadmap", start_date: "2026-11-01", target_date: "2026-11-30", is_pinned: true },
+  ];
+  const tasksMap = { 1: [task] };
+
+  const monthData = buildMonthlyWeekRows(2026, 11, projects, tasksMap, {
+    visibleSubtaskProjectIds: new Set([1]),
+  });
+  const taskItems = monthData.weeks.flatMap((w) => w.items).filter((i) => i.taskId === 501);
+  // Should only appear in the single week containing 2026-11-18, spanning 1 column
+  assert.equal(taskItems.length, 1);
+  assert.equal(taskItems[0].spanCols, 1);
+  assert.equal(taskItems[0].isDeadlineOnly, true);
+  assert.equal(taskItems[0].dateRangeText, "Due 2026-11-18");
+
+  const focusedWeek = buildFocusedWeekRow("2026-11-18", projects, tasksMap, {
+    visibleSubtaskProjectIds: new Set([1]),
+  });
+  const weekTask = focusedWeek.items.find((i) => i.taskId === 501);
+  assert.ok(weekTask);
+  assert.equal(weekTask.spanCols, 1);
+  assert.equal(weekTask.dateRangeText, "Due 2026-11-18");
+});
+
+test("collectOverdueTasks deduplicates standalone tasks, excludes done/archived/completed projects, and sorts chronologically", () => {
+  const projects = [
+    { id: 1, name: "Active Launch", status: "active", color: "#b85423", is_pinned: true },
+    { id: 2, name: "Archived Stuff", status: "archived", color: "#4a7c59", is_pinned: false },
+    { id: 3, name: "Finished Work", status: "completed", color: "#6d597a", is_pinned: false },
+  ];
+  const standaloneTasks = [
+    { id: 50, project_id: null, title: "Inbox Late Task", status: "todo", due_date: "2026-10-28" },
+    { id: 51, project_id: null, title: "Inbox Done by Progress", status: "todo", progress: 100, due_date: "2026-10-15" },
+  ];
+  const projectTasksMap = {
+    // Same standalone tasks also present under key 0 (as populated by fetchProjectsAndTimeline)
+    0: [
+      { id: 50, project_id: null, title: "Inbox Late Task", status: "todo", due_date: "2026-10-28" },
+      { id: 51, project_id: null, title: "Inbox Done by Progress", status: "todo", progress: 100, due_date: "2026-10-15" },
+    ],
+    1: [
+      { id: 101, project_id: 1, title: "Active Later Overdue", status: "todo", due_date: "2026-11-05" },
+      { id: 102, project_id: 1, title: "Active Done", status: "done", due_date: "2026-11-01" },
+      { id: 103, project_id: 1, title: "Active Future", status: "todo", due_date: "2026-11-20" },
+    ],
+    2: [
+      { id: 201, project_id: 2, title: "Archived Overdue", status: "todo", due_date: "2026-10-10" },
+    ],
+    3: [
+      { id: 301, project_id: 3, title: "Completed Proj Task", status: "todo", due_date: "2026-10-12" },
+    ],
+    999: [
+      { id: 901, project_id: 999, title: "Orphaned Archived Project Task", status: "todo", due_date: "2026-10-14" },
+    ],
+  };
+
+  assert.equal(isTaskOverdue(standaloneTasks[0], "2026-11-10"), true);
+  assert.equal(isTaskOverdue(standaloneTasks[1], "2026-11-10"), false);
+
+  const overdue = collectOverdueTasks(projectTasksMap, standaloneTasks, projects, "2026-11-10");
+  assert.deepEqual(
+    overdue.map((t) => t.id),
+    [50, 101]
+  );
+  assert.equal(overdue[0].projectName, "Inbox");
+  assert.equal(overdue[0].isStandalone, true);
+  assert.equal(overdue[1].projectName, "Active Launch");
+  assert.equal(overdue[1].isStandalone, false);
+});
+
+test("getOverdueNavigationTarget steps Prev/Next with wrap-around and resolves target year/month/date", () => {
+  const overdue = [
+    { id: 50, title: "Oct Overdue", due_date: "2026-10-28" },
+    { id: 101, title: "Nov Overdue", due_date: "2026-11-05" },
+    { id: 102, title: "Start Fallback", start_date: "2026-11-08", due_date: "2026-11-09" },
+  ];
+
+  // Empty list handling
+  const emptyNav = getOverdueNavigationTarget([], 0, 1);
+  assert.equal(emptyNav.task, null);
+  assert.equal(emptyNav.index, 0);
+
+  // Step forward from 0 -> 1
+  const nextNav = getOverdueNavigationTarget(overdue, 0, 1);
+  assert.equal(nextNav.index, 1);
+  assert.equal(nextNav.task.id, 101);
+  assert.equal(nextNav.targetDateIso, "2026-11-05");
+  assert.equal(nextNav.year, 2026);
+  assert.equal(nextNav.month, 11);
+
+  // Wrap backward from 0 -> last (2)
+  const wrapBack = getOverdueNavigationTarget(overdue, 0, -1);
+  assert.equal(wrapBack.index, 2);
+  assert.equal(wrapBack.task.id, 102);
+  assert.equal(wrapBack.targetDateIso, "2026-11-09");
+
+  // Wrap forward from last (2) -> 0
+  const wrapFwd = getOverdueNavigationTarget(overdue, 2, 1);
+  assert.equal(wrapFwd.index, 0);
+  assert.equal(wrapFwd.task.id, 50);
+  assert.equal(wrapFwd.year, 2026);
+  assert.equal(wrapFwd.month, 10);
+});
+
+test("Overdue mode reveals overdue subtasks of unpinned/collapsed active projects while hiding completed projects", () => {
+  const allProjects = [
+    {
+      id: 1,
+      name: "Unpinned Collapsed Active",
+      status: "active",
+      is_pinned: false,
+      start_date: "2026-11-01",
+      target_date: "2026-11-30",
+    },
+    {
+      id: 2,
+      name: "Completed Project",
+      status: "completed",
+      is_pinned: true,
+      start_date: "2026-11-01",
+      target_date: "2026-11-10",
+    },
+  ];
+  const tasksMap = {
+    1: [
+      { id: 101, project_id: 1, title: "Collapsed Overdue Task", status: "todo", start_date: "2026-11-02", due_date: "2026-11-04" },
+    ],
+    2: [
+      { id: 201, project_id: 2, title: "Subtask under Completed Project", status: "todo", start_date: "2026-11-02", due_date: "2026-11-04" },
+    ],
+  };
+
+  // In Month View with collapsed subtasks (empty Set), overdue mode still shows active project's overdue subtask
+  const monthSpec = buildMonthlyWeekRows(2026, 11, [], tasksMap, {
+    taskFilterMode: "overdue",
+    todayIso: "2026-11-12",
+    visibleSubtaskProjectIds: new Set(),
+    allProjects,
+  });
+  const monthItems = monthSpec.weeks.flatMap((w) => w.items);
+  assert.ok(monthItems.some((i) => i.taskId === 101 && i.isOverdue === true));
+  assert.ok(!monthItems.some((i) => i.projectId === 2));
+
+  // Same guarantee in Week View
+  const weekSpec = buildFocusedWeekRow("2026-11-04", [], tasksMap, {
+    taskFilterMode: "overdue",
+    todayIso: "2026-11-12",
+    visibleSubtaskProjectIds: new Set(),
+    allProjects,
+  });
+  assert.ok(weekSpec.items.some((i) => i.taskId === 101 && i.isOverdue === true));
+  assert.ok(!weekSpec.items.some((i) => i.projectId === 2));
+});
 
 
 
 
+
+
+test("Time grid parsing, formatting, snapping, and overlap column layout", () => {
+  assert.equal(parseTimeToMinutes("00:00"), 0);
+  assert.equal(parseTimeToMinutes("09:30"), 570);
+  assert.equal(parseTimeToMinutes("23:59"), 1439);
+  assert.equal(parseTimeToMinutes("bad"), null);
+  assert.equal(parseTimeToMinutes(null), null);
+
+  assert.equal(formatMinutesToTime(0), "00:00");
+  assert.equal(formatMinutesToTime(570), "09:30");
+  assert.equal(formatMinutesToTime(1439), "23:59");
+
+  assert.equal(formatTimeDisplay(""), "");
+  assert.ok(formatTimeDisplay("09:30").length > 0);
+  assert.notEqual(formatTimeDisplay("09:00"), formatTimeDisplay("21:00"));
+
+  assert.equal(snapMinutes(555, 15), 555);
+  assert.equal(snapMinutes(561, 15), 555);
+  assert.equal(snapMinutes(566, 15), 570);
+
+  assert.equal(isTimedTask({ id: 1, start_time: "09:00" }), true);
+  assert.equal(isTimedTask({ id: 2, end_time: "10:00" }), false);
+  assert.equal(isTimedTask({ id: 3, title: "All day" }), false);
+
+  const tasks = [
+    { id: 1, title: "Standup", start_date: "2026-11-24", due_date: "2026-11-24", start_time: "09:00", end_time: "10:30" },
+    { id: 2, title: "Overlap Design", start_date: "2026-11-24", due_date: "2026-11-24", start_time: "09:30", end_time: "11:00" },
+    { id: 3, title: "Afternoon Block", start_date: "2026-11-24", due_date: "2026-11-24", start_time: "13:00", end_time: "14:00" },
+  ];
+  const layout = computeTimedBlockLayout(tasks, 56);
+  assert.equal(layout.length, 3);
+
+  const first = layout.find((b) => b.task.id === 1);
+  const second = layout.find((b) => b.task.id === 2);
+  const third = layout.find((b) => b.task.id === 3);
+
+  assert.equal(first.startMin, 540);
+  assert.equal(first.endMin, 630);
+  assert.equal(first.topPx, 9 * 56);
+  assert.equal(first.colCount, 2);
+  assert.equal(second.colCount, 2);
+  assert.notEqual(first.colIndex, second.colIndex);
+
+  assert.equal(third.colCount, 1);
+  assert.equal(third.colIndex, 0);
+  assert.equal(third.topPx, 13 * 56);
+  assert.ok(third.heightPx >= 56);
+});
+
+test("Sidebar area extraction, project grouping/filtering, and timed task prefix on Month rows", () => {
+  const projects = [
+    { id: 1, name: "Launch App", status: "active", is_pinned: true, area: "Work" },
+    { id: 2, name: "Home Studio", status: "planned", is_pinned: false, area: "Personal" },
+    { id: 3, name: "Roadmap Q1", status: "active", is_pinned: false, area: "Work" },
+    { id: 4, name: "Old Sprint", status: "completed", is_pinned: false, area: "Work" },
+    { id: 5, name: "Old Archive", status: "archived", is_pinned: false, area: "Hidden" },
+  ];
+
+  const areas = extractProjectAreas(projects);
+  assert.deepEqual(areas, ["Personal", "Work"]);
+
+  const allGrouped = groupSidebarProjects(projects);
+  assert.deepEqual(allGrouped.pinned.map((p) => p.id), [1]);
+  assert.deepEqual(allGrouped.active.map((p) => p.id), [3]);
+  assert.deepEqual(allGrouped.later.map((p) => p.id), [2]);
+  assert.deepEqual(allGrouped.completed.map((p) => p.id), [4]);
+
+  const filtered = groupSidebarProjects(projects, { query: "road", area: "Work" });
+  assert.deepEqual(filtered.pinned, []);
+  assert.deepEqual(filtered.active.map((p) => p.id), [3]);
+  assert.deepEqual(filtered.later, []);
+  assert.deepEqual(filtered.completed, []);
+
+  const standaloneTimed = [
+    {
+      id: 99,
+      project_id: null,
+      title: "Dentist",
+      status: "todo",
+      start_date: "2026-11-24",
+      due_date: "2026-11-24",
+      start_time: "09:30",
+      end_time: "10:15",
+    },
+  ];
+  const monthSpec = buildMonthlyWeekRows(2026, 11, [], {}, {
+    standaloneTasks: standaloneTimed,
+    todayIso: "2026-11-24",
+  });
+  const monthItem = monthSpec.weeks.flatMap((w) => w.items).find((i) => i.taskId === 99);
+  assert.ok(monthItem);
+  assert.equal(monthItem.startTime, "09:30");
+  assert.equal(monthItem.endTime, "10:15");
+  assert.ok(typeof monthItem.timePrefix === "string" && monthItem.timePrefix.length > 0);
+});
+
+test("Markdown preview emits task indices and toggleMarkdownCheckboxByIndex toggles outside code fences", () => {
+  const md = [
+    "# Daily Notes",
+    "```md",
+    "- [ ] Fake task inside code fence",
+    "```",
+    "- [ ] Buy coffee",
+    "- [x] Ship brutalist UI",
+    "  * [ ] Nested checklist item",
+  ].join("\n");
+
+  const html = renderMarkdownPreviewHtml(md);
+  assert.ok(html.includes('data-md-task-index="0"'));
+  assert.ok(html.includes('data-md-task-index="1"'));
+  assert.ok(html.includes('data-md-task-index="2"'));
+  assert.ok(!html.includes('data-md-task-index="3"'));
+
+  const toggled0 = toggleMarkdownCheckboxByIndex(md, 0);
+  assert.ok(toggled0.includes("- [ ] Fake task inside code fence"));
+  assert.ok(toggled0.includes("- [x] Buy coffee"));
+  assert.ok(toggled0.includes("- [x] Ship brutalist UI"));
+
+  const toggled1 = toggleMarkdownCheckboxByIndex(toggled0, 1);
+  assert.ok(toggled1.includes("- [ ] Ship brutalist UI"));
+
+  const toggled2 = toggleMarkdownCheckboxByIndex(toggled1, 2);
+  assert.ok(toggled2.includes("  * [x] Nested checklist item"));
+});

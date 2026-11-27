@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import LoginPage from "./LoginPage.vue";
 import ChronoNoteLogo from "./ChronoNoteLogo.vue";
 import HabitHeatmapView from "./HabitHeatmapView.vue";
@@ -8,6 +8,10 @@ import StickerTrayDrawer from "./StickerTrayDrawer.vue";
 import DocsImageOverlay from "./DocsImageOverlay.vue";
 import AccountSettingsModal from "./AccountSettingsModal.vue";
 import JournalDraggablesOverlay from "./JournalDraggablesOverlay.vue";
+import CalendarTimeGrid from "./CalendarTimeGrid.vue";
+import QuickTaskPopover from "./QuickTaskPopover.vue";
+import CommandPalette from "./CommandPalette.vue";
+import ArchiveVaultModal from "./ArchiveVaultModal.vue";
 import { filterStickersByTarget, readFileAsDataUrl } from "../composables/useStickers.js";
 import { parseDocsImageDirectives, formatDocsImageMarkdown } from "../composables/useDocsImages.js";
 import {
@@ -31,19 +35,27 @@ import {
   buildFocusedWeekRow,
   calculateDateSpanDays,
   clipSubtaskToProjectRange,
+  collectOverdueTasks,
   computeProjectDragResult,
   computeSubtaskDragResult,
   computeYearMonthGridSpan,
   extractJournalSnippet,
+  extractProjectAreas,
   filterProjectsByStatus,
   filterSubtasksByStatus,
   formatEditorialDate,
+  formatTimeDisplay,
+  getOverdueNavigationTarget,
   groupProjectsForKanban,
+  groupSidebarProjects,
   isProjectCompleted,
+  isTaskOverdue,
+  isTimedTask,
   moveProjectInKanban,
   renderMarkdownPreviewHtml,
   shiftDateIso,
   shiftDateMonths,
+  toggleMarkdownCheckboxByIndex,
 } from "../composables/useTimelineGeometry.js";
 import {
   appendOcrToMarkdown,
@@ -427,8 +439,9 @@ const showTimelineAddProject = ref(false);
 const newProject = ref({
   name: "",
   description: "",
+  area: "",
   status: "active",
-  color: "#b85423",
+  color: "#c2410c",
   start_date: "2026-11-01",
   target_date: "2026-11-30",
   is_pinned: true,
@@ -440,24 +453,132 @@ const newSubtask = ref({
   description: "",
   start_date: "2026-11-05",
   due_date: "2026-11-12",
+  start_time: "",
+  end_time: "",
+  priority: "medium",
+  is_milestone: false,
   color: "#2c666e",
+  deadline_only: false,
 });
 
 // Calendar Timeline Controls
-const calendarScaleMode = ref("month");
+const calendarScaleMode = ref("month"); // 'day' | 'week' | 'month' | 'year'
 const todayIso = ref(getSystemTodayIso());
 const selectedYear = ref(new Date().getFullYear());
 const selectedMonth = ref(new Date().getMonth() + 1);
 const selectedWeekAnchorIso = ref(todayIso.value);
+const selectedDayIso = ref(todayIso.value);
 const calendarProjectDisplayMode = ref("all"); // 'all' | 'milestones'
+
+// Workspace Organization, Archiving, Quick-Create & Command Palette State
+const isNavSpineOpen = ref(false);
+const isSidebarCollapsed = ref(false);
+const sidebarSearchQuery = ref("");
+const selectedAreaFilter = ref("all");
+const sidebarSectionsOpen = ref({
+  pinned: true,
+  active: true,
+  later: false,
+  completed: false,
+});
+const archivedProjects = ref([]);
+const showArchiveModal = ref(false);
+const showCommandPalette = ref(false);
+const showDisplayMenu = ref(false);
+const displayMenuRef = ref(null);
+const projectsPageView = ref("board"); // 'board' | 'list' | 'archive'
+const projectsSearchQuery = ref("");
+const hideCompletedProjects = ref(false);
+const showNewProjectModal = ref(false);
+const collapsedKanbanCols = ref({ completed: false });
+const quickTaskModalOpen = ref(false);
+const quickTaskDraft = ref({});
+const monthDragCreate = ref(null);
+
+// Toast / Undo Snackbar state
+const toastNotification = ref(null);
+let toastTimer = null;
+
+function showNotification({
+  message,
+  type = "info",
+  undoLabel = null,
+  undoFn = null,
+  durationMs = 5500,
+} = {}) {
+  if (!message) return;
+  if (toastTimer) clearTimeout(toastTimer);
+  toastNotification.value = { message, type, undoLabel, undoFn };
+  toastTimer = setTimeout(() => {
+    toastNotification.value = null;
+    toastTimer = null;
+  }, durationMs);
+}
+
+function dismissToast() {
+  if (toastTimer) clearTimeout(toastTimer);
+  toastNotification.value = null;
+  toastTimer = null;
+}
+
+async function triggerToastUndo() {
+  const fn = toastNotification.value?.undoFn;
+  dismissToast();
+  if (typeof fn === "function") {
+    await fn();
+  }
+}
 
 // Decoupled Standalone One-Off Tasks (Inbox) — starts clean with no random mock items
 const standaloneTasks = ref([]);
+const standalonePendingCount = computed(
+  () => standaloneTasks.value.filter((t) => t.status !== "done").length
+);
+
+function jumpToToday() {
+  const nowIso = getSystemTodayIso();
+  todayIso.value = nowIso;
+  const parts = nowIso.split("-").map(Number);
+  if (parts.length === 3) {
+    selectedYear.value = parts[0];
+    selectedMonth.value = parts[1];
+  }
+  selectedWeekAnchorIso.value = nowIso;
+  selectedDayIso.value = nowIso;
+}
 
 function switchToWeekMode() {
   calendarScaleMode.value = "week";
-  const mStr = String(selectedMonth.value).padStart(2, "0");
-  selectedWeekAnchorIso.value = `${selectedYear.value}-${mStr}-01`;
+  const nowParts = todayIso.value.split("-").map(Number);
+  if (
+    nowParts.length === 3 &&
+    selectedYear.value === nowParts[0] &&
+    selectedMonth.value === nowParts[1]
+  ) {
+    selectedWeekAnchorIso.value = todayIso.value;
+  } else {
+    const mStr = String(selectedMonth.value).padStart(2, "0");
+    selectedWeekAnchorIso.value = `${selectedYear.value}-${mStr}-01`;
+  }
+}
+
+function switchToDayMode(iso = null) {
+  calendarScaleMode.value = "day";
+  if (iso) {
+    selectedDayIso.value = iso;
+    return;
+  }
+  const nowParts = todayIso.value.split("-").map(Number);
+  if (
+    nowParts.length === 3 &&
+    selectedYear.value === nowParts[0] &&
+    selectedMonth.value === nowParts[1]
+  ) {
+    selectedDayIso.value = todayIso.value;
+  } else {
+    const mStr = String(selectedMonth.value).padStart(2, "0");
+    selectedDayIso.value = `${selectedYear.value}-${mStr}-01`;
+  }
 }
 
 function loadVisibleSubtaskProjectIds() {
@@ -575,27 +696,61 @@ const activeNote = ref({
   content_md: "",
 });
 
-// Group all projects into the 4 Kanban columns
+// Unique sorted list of project areas/folders
+const projectAreas = computed(() => extractProjectAreas(projects.value));
+
+// Filtered projects for the Projects Board / List page
+const filteredProjectsForBoard = computed(() => {
+  const q = projectsSearchQuery.value.trim().toLowerCase();
+  const area = selectedAreaFilter.value;
+  return projects.value.filter((p) => {
+    if (p.status === "archived") return false;
+    if (hideCompletedProjects.value && isProjectCompleted(p)) return false;
+    const projArea = (p.area || "").trim();
+    if (area && area !== "all") {
+      if (area === "__none__" && projArea) return false;
+      if (area !== "__none__" && projArea !== area) return false;
+    }
+    if (q) {
+      const hay = `${p.name || ""} ${p.description || ""} ${projArea}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+});
+
+// Group filtered projects into the 4 Kanban columns
 const projectKanbanColumns = computed(() =>
-  groupProjectsForKanban(projects.value)
+  groupProjectsForKanban(filteredProjectsForBoard.value)
 );
 
-// Sidebar projects filtered by the current All | Active | Completed tab
+// Sidebar projects filtered by the current All | Active | Overdue | Completed tab
 const sidebarProjects = computed(() =>
   filterProjectsByStatus(
     projects.value.filter((p) => p.status !== "archived"),
-    taskFilterMode.value
+    taskFilterMode.value,
+    projectTasksMap.value,
+    todayIso.value
   )
+);
+
+// Grouped sidebar buckets (pinned / active / later / completed) with search & area filters
+const sidebarGroups = computed(() =>
+  groupSidebarProjects(sidebarProjects.value, {
+    query: sidebarSearchQuery.value,
+    area: selectedAreaFilter.value,
+  })
 );
 
 // Pinned projects shown on the Timeline:
 // - 'all': shows all pinned projects (active and done)
 // - 'active': hides finished projects so only active projects appear
+// - 'overdue': hides finished projects so only non-completed projects are eligible
 // - 'done': shows completed projects (or projects with completed subtasks)
 const pinnedProjects = computed(() =>
   projects.value.filter((p) => {
     if (!p.is_pinned || p.status === "archived") return false;
-    if (taskFilterMode.value === "active") {
+    if (taskFilterMode.value === "active" || taskFilterMode.value === "overdue") {
       return !isProjectCompleted(p);
     }
     if (taskFilterMode.value === "done") {
@@ -646,19 +801,174 @@ const selectedProject = computed(() => {
   return projects.value.find((p) => p.id === selectedProjectId.value) || null;
 });
 
-const allWorkspaceTasks = computed(() => {
-  const list = [...standaloneTasks.value];
-  for (const pTasks of Object.values(projectTasksMap.value || {})) {
-    list.push(...pTasks);
-  }
-  return list;
+// Deduplicated, chronologically sorted overdue tasks across Inbox & active projects
+const overdueTasksList = computed(() =>
+  collectOverdueTasks(
+    projectTasksMap.value,
+    standaloneTasks.value,
+    projects.value,
+    todayIso.value
+  )
+);
+
+const totalOverdueTasksCount = computed(() => overdueTasksList.value.length);
+
+// Prev/Next Overdue Task Navigator state on the calendar
+const activeOverdueIndex = ref(0);
+const focusedOverdueTaskId = ref(null);
+const focusedOverdueDateIso = ref(null);
+
+const activeOverdueTask = computed(() => {
+  const list = overdueTasksList.value;
+  if (!list.length) return null;
+  const idx = Math.min(Math.max(activeOverdueIndex.value, 0), list.length - 1);
+  return list[idx] || null;
 });
 
-const totalOverdueTasksCount = computed(() => {
-  const refDate = todayIso.value;
-  return allWorkspaceTasks.value.filter(
-    (t) => t.due_date && t.due_date < refDate && t.status !== "done" && t.progress !== 100
-  ).length;
+function scrollFocusedOverdueIntoView(taskId, dateIso) {
+  if (typeof document === "undefined") return;
+  const taskEl =
+    taskId !== null && taskId !== undefined
+      ? document.querySelector(`[data-overdue-task-id="${taskId}"]`)
+      : null;
+  const dayEl = dateIso
+    ? document.querySelector(`[data-calendar-day-iso="${dateIso}"]`)
+    : null;
+  const targetEl = taskEl || dayEl;
+  if (targetEl && typeof targetEl.scrollIntoView === "function") {
+    targetEl.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+      inline: "nearest",
+    });
+  }
+}
+
+async function jumpToOverdueTaskAt(targetIndex, { scroll = true } = {}) {
+  const list = overdueTasksList.value;
+  const nav = getOverdueNavigationTarget(list, targetIndex, 0);
+  activeOverdueIndex.value = nav.index;
+
+  if (!nav.task) {
+    focusedOverdueTaskId.value = null;
+    focusedOverdueDateIso.value = null;
+    return;
+  }
+
+  focusedOverdueTaskId.value = nav.task.id;
+  focusedOverdueDateIso.value = nav.targetDateIso;
+
+  if (calendarScaleMode.value === "year") {
+    calendarScaleMode.value = "month";
+  }
+
+  if (nav.year !== null && nav.month !== null) {
+    selectedYear.value = nav.year;
+    selectedMonth.value = nav.month;
+  }
+  if (nav.targetDateIso) {
+    selectedWeekAnchorIso.value = nav.targetDateIso;
+    selectedDayIso.value = nav.targetDateIso;
+  }
+
+  if (scroll) {
+    await nextTick();
+    scrollFocusedOverdueIntoView(nav.task.id, nav.targetDateIso);
+  }
+}
+
+async function moveOverdueTaskToToday(task) {
+  if (!task) return;
+  const origStart = task.start_date;
+  const origDue = task.due_date;
+  const targetIso = todayIso.value;
+  const nextStart =
+    origStart && origStart <= targetIso ? origStart : targetIso;
+  const pid = task.project_id ?? 0;
+
+  await updateSubtaskFields(pid, task.id, {
+    start_date: nextStart,
+    due_date: targetIso,
+  });
+
+  showNotification({
+    type: "success",
+    message: `Moved "${task.title}" to Today`,
+    undoLabel: "Undo",
+    undoFn: async () => {
+      await updateSubtaskFields(pid, task.id, {
+        start_date: origStart,
+        due_date: origDue,
+      });
+    },
+  });
+}
+
+async function enterOverdueMode(toggle = false) {
+  if (toggle && taskFilterMode.value === "overdue") {
+    exitOverdueFilter();
+    return;
+  }
+  const wasOverdue = taskFilterMode.value === "overdue";
+  taskFilterMode.value = "overdue";
+  showMobileProjectsSidebar.value = false;
+
+  if (overdueTasksList.value.length > 0) {
+    await jumpToOverdueTaskAt(wasOverdue ? activeOverdueIndex.value : 0);
+  } else {
+    activeOverdueIndex.value = 0;
+    focusedOverdueTaskId.value = null;
+    focusedOverdueDateIso.value = null;
+  }
+}
+
+function exitOverdueFilter() {
+  taskFilterMode.value = "all";
+  focusedOverdueTaskId.value = null;
+  focusedOverdueDateIso.value = null;
+}
+
+async function stepOverdueTask(delta) {
+  const list = overdueTasksList.value;
+  if (!list.length) return;
+  const nav = getOverdueNavigationTarget(list, activeOverdueIndex.value, delta);
+  await jumpToOverdueTaskAt(nav.index);
+}
+
+watch(taskFilterMode, (mode) => {
+  if (mode !== "overdue") {
+    focusedOverdueTaskId.value = null;
+    focusedOverdueDateIso.value = null;
+  }
+});
+
+watch(overdueTasksList, (list) => {
+  if (!list.length) {
+    activeOverdueIndex.value = 0;
+    focusedOverdueTaskId.value = null;
+    focusedOverdueDateIso.value = null;
+    return;
+  }
+  if (taskFilterMode.value !== "overdue") {
+    if (activeOverdueIndex.value >= list.length) {
+      activeOverdueIndex.value = 0;
+    }
+    return;
+  }
+  const existingIdx =
+    focusedOverdueTaskId.value !== null && focusedOverdueTaskId.value !== undefined
+      ? list.findIndex((t) => t.id === focusedOverdueTaskId.value)
+      : -1;
+  const nextIdx =
+    existingIdx >= 0
+      ? existingIdx
+      : Math.min(Math.max(activeOverdueIndex.value, 0), list.length - 1);
+  activeOverdueIndex.value = nextIdx;
+  const nextTask = list[nextIdx];
+  focusedOverdueTaskId.value = nextTask ? nextTask.id : null;
+  focusedOverdueDateIso.value = nextTask
+    ? nextTask.due_date || nextTask.start_date || null
+    : null;
 });
 
 // Letter prefix for the selected project (A, B, C...)
@@ -683,7 +993,7 @@ const selectedProjectSubtasks = computed(() => {
     ...t,
     code: `${prefix}${idx + 1}`,
   }));
-  return filterSubtasksByStatus(withCodes, taskFilterMode.value);
+  return filterSubtasksByStatus(withCodes, taskFilterMode.value, todayIso.value);
 });
 
 const nextSubtaskCode = computed(() => {
@@ -733,6 +1043,113 @@ const focusedWeekSpec = computed(() =>
     }
   )
 );
+
+const focusedWeekAllDayItems = computed(() =>
+  (focusedWeekSpec.value.items || []).filter(
+    (item) => !(item.kind === "task" && item.startTime)
+  )
+);
+
+// Day Mode: 1 Focused Day with all-day strip + hourly time grid
+const dayViewSpec = computed(() => {
+  const iso = selectedDayIso.value || todayIso.value;
+  const weekSpec = buildFocusedWeekRow(
+    iso,
+    pinnedProjects.value,
+    projectTasksMap.value,
+    {
+      taskFilterMode: taskFilterMode.value,
+      projectDisplayMode: calendarProjectDisplayMode.value,
+      standaloneTasks: standaloneTasks.value,
+      dailyNotesMap: dailyJournalsMap.value,
+      todayIso: todayIso.value,
+      visibleSubtaskProjectIds: visibleTimelineSubtaskProjectIds.value,
+      allProjects: projects.value,
+    }
+  );
+  const dayIdx = (weekSpec.days || []).findIndex((d) => d.iso === iso);
+  const colNum = dayIdx >= 0 ? dayIdx + 1 : 1;
+  const targetDay = dayIdx >= 0 ? weekSpec.days[dayIdx] : weekSpec.days[0];
+
+  const allDayItems = (weekSpec.items || [])
+    .filter((item) => {
+      if (item.kind === "task" && item.startTime) return false;
+      const startCol = item.startCol || 1;
+      const endCol = item.endCol || startCol;
+      return colNum >= startCol && colNum <= endCol;
+    })
+    .map((item, idx) => ({
+      ...item,
+      startCol: 1,
+      spanCols: 1,
+      endCol: 1,
+      trackRow: idx + 1,
+    }));
+
+  return {
+    days: targetDay ? [{ ...targetDay, col: 1 }] : [],
+    allDayItems,
+    rangeText: formatEditorialDate(iso).full,
+  };
+});
+
+// Timed tasks bucketed by ISO date for Day & Week hourly grids
+const timedTasksByDate = computed(() => {
+  const byDate = {};
+  const seenIds = new Set();
+  const visibleProjs = new Set(pinnedProjects.value.map((p) => p.id));
+  for (const p of projects.value) {
+    if (p.status === "archived") continue;
+    if (taskFilterMode.value === "overdue" || isProjectSubtasksVisible(p.id)) {
+      visibleProjs.add(p.id);
+    }
+  }
+
+  const pushTimed = (task, proj) => {
+    if (!task || !isTimedTask(task)) return;
+    if (task.id != null) {
+      if (seenIds.has(task.id)) return;
+      seenIds.add(task.id);
+    }
+    if (
+      filterSubtasksByStatus([task], taskFilterMode.value, todayIso.value)
+        .length === 0
+    ) {
+      return;
+    }
+    const dateIso = task.start_date || task.due_date;
+    if (!dateIso) return;
+    if (!byDate[dateIso]) byDate[dateIso] = [];
+    byDate[dateIso].push({
+      ...task,
+      project_id: proj ? proj.id : null,
+      projectName: proj ? proj.name : "Inbox",
+      displayColor: task.color || proj?.color || (proj ? "#2c666e" : "#e11d48"),
+      isOverdue: isTaskOverdue(task, todayIso.value),
+      isStandalone: !proj,
+    });
+  };
+
+  for (const proj of projects.value) {
+    if (proj.status === "archived" || !visibleProjs.has(proj.id)) continue;
+    const projDone = isProjectCompleted(proj);
+    if (
+      (taskFilterMode.value === "active" || taskFilterMode.value === "overdue") &&
+      projDone
+    ) {
+      continue;
+    }
+    for (const t of projectTasksMap.value[proj.id] || []) {
+      pushTimed(t, proj);
+    }
+  }
+
+  for (const t of standaloneTasks.value) {
+    pushTimed(t, null);
+  }
+
+  return byDate;
+});
 
 // Editorial formatted date for the currently selected journal date
 const formattedJournalHeading = computed(() =>
@@ -794,6 +1211,49 @@ const renderedJournalHtml = computed(() =>
 
 function renderMarkdown(md) {
   return renderMarkdownPreviewHtml(md);
+}
+
+async function handleJournalPreviewClick(event, isDrawer = false) {
+  const target = event?.target;
+  if (target?.closest?.("a.md-link")) return;
+  const checkbox = target?.closest?.("input.md-task-checkbox[data-md-task-index]");
+  if (checkbox) {
+    event.stopPropagation();
+    const taskIndex = Number(checkbox.dataset.mdTaskIndex);
+    const updated = toggleMarkdownCheckboxByIndex(journalDraftMd.value || "", taskIndex);
+    if (updated !== journalDraftMd.value) {
+      journalDraftMd.value = updated;
+      await saveDailyJournalEntry();
+    }
+    return;
+  }
+  startEditingJournal(isDrawer);
+}
+
+async function handleSubtaskNotePreviewClick(event, sub) {
+  const checkbox = event?.target?.closest?.("input.md-task-checkbox[data-md-task-index]");
+  if (!checkbox || !sub) return;
+  event.stopPropagation();
+  const taskIndex = Number(checkbox.dataset.mdTaskIndex);
+  const updated = toggleMarkdownCheckboxByIndex(sub.description || "", taskIndex);
+  if (updated !== sub.description) {
+    sub.description = updated;
+    await updateSubtaskFields(selectedProject.value?.id, sub.id, {
+      description: sub.description,
+    });
+  }
+}
+
+async function handleProjectNotePreviewClick(event) {
+  const checkbox = event?.target?.closest?.("input.md-task-checkbox[data-md-task-index]");
+  if (!checkbox) return;
+  event.stopPropagation();
+  const taskIndex = Number(checkbox.dataset.mdTaskIndex);
+  const updated = toggleMarkdownCheckboxByIndex(activeNote.value.content_md || "", taskIndex);
+  if (updated !== activeNote.value.content_md) {
+    activeNote.value.content_md = updated;
+    await saveNote();
+  }
 }
 
 // Single-field Project Note Editing state (renders MD by default, double click to edit, blur to save & render)
@@ -870,14 +1330,20 @@ const dragModeLabel = computed(() => {
 function startTimelineDrag(event, projectId, type, scaleMode, taskId = null) {
   if (event.button !== undefined && event.button !== 0) return;
 
-  const proj = projects.value.find((p) => p.id === projectId);
-  if (!proj) return;
+  const isStandalone = Boolean(taskId && (!projectId || projectId === 0));
+  const proj = isStandalone
+    ? null
+    : projects.value.find((p) => p.id === projectId);
+  if (!isStandalone && !proj) return;
 
   const cardEl = event.currentTarget.closest(".week-item-card") || event.currentTarget;
-  const container = cardEl.closest(".week-seven-col-area, .week-items-stack-grid, .year-twelve-months-grid");
+  const container = cardEl.closest(
+    ".week-seven-col-area, .week-items-stack-grid, .year-twelve-months-grid, .timegrid-allday-grid"
+  );
   const containerRect = container ? container.getBoundingClientRect() : null;
 
-  const numCols = scaleMode === "year" ? 12 : 7;
+  const numCols =
+    scaleMode === "year" ? 12 : scaleMode === "day" ? 1 : 7;
   const colWidth =
     containerRect && containerRect.width > 0
       ? containerRect.width / numCols
@@ -886,30 +1352,32 @@ function startTimelineDrag(event, projectId, type, scaleMode, taskId = null) {
       : 120;
 
   const rowHeight = 72;
-  const pStart = proj.start_date || todayIso.value;
-  const pTarget = proj.target_date || pStart;
+  const pStart = proj ? proj.start_date || todayIso.value : todayIso.value;
+  const pTarget = proj ? proj.target_date || pStart : todayIso.value;
 
   if (taskId) {
-    const list = projectTasksMap.value[projectId] || [];
+    const pKey = isStandalone ? 0 : projectId;
+    const list = projectTasksMap.value[pKey] || standaloneTasks.value || [];
     const task = list.find((t) => t.id === taskId);
     if (!task) return;
-    const tStart = task.start_date || pStart;
-    const tDue = task.due_date || tStart;
+    const tStart = task.start_date || task.due_date || pStart;
+    const tDue = task.due_date || task.start_date || tStart;
 
     activeTimelineDrag.value = {
       isTask: true,
-      projectId,
+      isStandalone,
+      projectId: pKey,
       taskId,
-      projectName: proj.name,
+      projectName: proj ? proj.name : "Inbox",
       taskTitle: task.title,
       type, // 'move' | 'resize-start' | 'resize-end'
-      scaleMode, // 'month' | 'year'
+      scaleMode, // 'month' | 'week' | 'day' | 'year'
       startX: event.clientX,
       startY: event.clientY,
       colWidth,
       rowHeight,
-      projectStartIso: pStart,
-      projectEndIso: pTarget,
+      projectStartIso: isStandalone ? null : pStart,
+      projectEndIso: isStandalone ? null : pTarget,
       origTask: { ...task, start_date: tStart, due_date: tDue },
       origStartDate: tStart,
       origTargetDate: tDue,
@@ -922,10 +1390,11 @@ function startTimelineDrag(event, projectId, type, scaleMode, taskId = null) {
     const origTasks = (projectTasksMap.value[projectId] || []).map((t) => ({ ...t }));
     activeTimelineDrag.value = {
       isTask: false,
+      isStandalone: false,
       projectId,
       projectName: proj.name,
       type, // 'move' | 'resize-start' | 'resize-end'
-      scaleMode, // 'month' | 'year'
+      scaleMode, // 'month' | 'week' | 'day' | 'year'
       startX: event.clientX,
       startY: event.clientY,
       colWidth,
@@ -966,7 +1435,7 @@ function handleTimelineDragMove(event) {
   if (drag.scaleMode === "year") {
     const deltaMonths = Math.round(deltaX / drag.colWidth);
     deltaDays = deltaMonths * 30;
-  } else if (drag.scaleMode === "week") {
+  } else if (drag.scaleMode === "week" || drag.scaleMode === "day") {
     const deltaCols = Math.round(deltaX / drag.colWidth);
     deltaDays = deltaCols;
   } else {
@@ -977,7 +1446,29 @@ function handleTimelineDragMove(event) {
 
   drag.deltaDays = deltaDays;
 
-  if (drag.isTask) {
+  if (drag.isTask && drag.isStandalone) {
+    let s = drag.origStartDate;
+    let e = drag.origTargetDate;
+    if (drag.type === "move") {
+      s = shiftDateIso(s, deltaDays);
+      e = shiftDateIso(e, deltaDays);
+    } else if (drag.type === "resize-start") {
+      s = shiftDateIso(s, deltaDays);
+      if (s > e) s = e;
+    } else if (drag.type === "resize-end") {
+      e = shiftDateIso(e, deltaDays);
+      if (e < s) e = s;
+    }
+    drag.currentStartDate = s;
+    drag.currentTargetDate = e;
+    const list = projectTasksMap.value[0] || standaloneTasks.value;
+    const t = list.find((x) => x.id === drag.taskId);
+    if (t) {
+      t.start_date = s;
+      t.due_date = e;
+    }
+    standaloneTasks.value = [...(projectTasksMap.value[0] || standaloneTasks.value)];
+  } else if (drag.isTask) {
     const res = computeSubtaskDragResult(
       drag.origTask,
       drag.projectStartIso,
@@ -1102,7 +1593,300 @@ function handleTimelineCardClick(item) {
   if (item.kind === "project") {
     toggleProjectSubtasksVisibility(item.projectId);
   } else {
+    openProjectDrawer(item.projectId ?? 0, "subtasks");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Direct Calendar Quick Task Creation & Month Drag-to-Create
+// ---------------------------------------------------------------------------
+
+function openQuickTaskPopover(partialDraft = {}) {
+  const defaultDate =
+    partialDraft.start_date ||
+    partialDraft.due_date ||
+    (calendarScaleMode.value === "day" ? selectedDayIso.value : todayIso.value);
+  quickTaskDraft.value = {
+    title: "",
+    project_id: 0,
+    start_date: defaultDate,
+    due_date: partialDraft.due_date || defaultDate,
+    start_time: partialDraft.start_time || "",
+    end_time: partialDraft.end_time || "",
+    priority: partialDraft.priority || "medium",
+    deadline_only: Boolean(partialDraft.deadline_only),
+    is_milestone: Boolean(partialDraft.is_milestone),
+    ...partialDraft,
+  };
+  quickTaskModalOpen.value = true;
+}
+
+async function handleQuickTaskSubmit(payload) {
+  const isInbox = payload.project_id === null || payload.project_id === undefined;
+  const pid = isInbox ? 0 : payload.project_id;
+  const proj = isInbox ? null : projects.value.find((p) => p.id === pid);
+  const fullPayload = {
+    project_id: isInbox ? null : pid,
+    title: payload.title,
+    description: "",
+    status: "todo",
+    priority: payload.priority || "medium",
+    color: proj?.color || (isInbox ? "#e11d48" : "#2c666e"),
+    start_date: payload.start_date || todayIso.value,
+    due_date: payload.due_date || payload.start_date || todayIso.value,
+    start_time: payload.start_time || null,
+    end_time: payload.end_time || null,
+    deadline_only: Boolean(payload.deadline_only),
+    is_milestone: Boolean(payload.is_milestone),
+  };
+
+  let createdItem = null;
+  try {
+    const res = await fetch(`${API_BASE}/tasks`, {
+      method: "POST",
+      headers: getAuthHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(fullPayload),
+    });
+    if (res.ok) {
+      const created = await res.json();
+      createdItem = {
+        ...created,
+        color: created.color || fullPayload.color,
+      };
+    }
+  } catch {
+    // Local fallback below
+  }
+
+  if (!createdItem) {
+    createdItem = {
+      id: Date.now(),
+      ...fullPayload,
+    };
+  }
+
+  if (!projectTasksMap.value[pid]) projectTasksMap.value[pid] = [];
+  projectTasksMap.value[pid].push(createdItem);
+  if (isInbox) {
+    standaloneTasks.value = [...projectTasksMap.value[0]];
+  } else if (!isProjectSubtasksVisible(pid)) {
+    const nextVis = new Set(visibleTimelineSubtaskProjectIds.value);
+    nextVis.add(pid);
+    visibleTimelineSubtaskProjectIds.value = nextVis;
+    persistVisibleSubtaskProjectIds();
+  }
+  persistLocalProjectsAndTasks();
+  quickTaskModalOpen.value = false;
+  showNotification({
+    type: "success",
+    message: `Added "${createdItem.title}"`,
+  });
+}
+
+function startMonthDayDragCreate(event, week, dayIso) {
+  if (event.button !== 0 || activeTimelineDrag.value) return;
+  monthDragCreate.value = {
+    weekNumber: week.weekNumber,
+    anchorIso: dayIso,
+    currentIso: dayIso,
+    startIso: dayIso,
+    endIso: dayIso,
+    startX: event.clientX,
+    startY: event.clientY,
+    hasMoved: false,
+  };
+  window.addEventListener("pointerup", finishMonthDayDragCreate);
+  window.addEventListener("pointercancel", finishMonthDayDragCreate);
+}
+
+function updateMonthDayDragCreate(week, dayIso, event = null) {
+  const drag = monthDragCreate.value;
+  if (!drag || drag.weekNumber !== week.weekNumber) return;
+  if (
+    dayIso !== drag.anchorIso ||
+    (event && Math.abs(event.clientX - drag.startX) > 6)
+  ) {
+    drag.hasMoved = true;
+  }
+  drag.currentIso = dayIso;
+  drag.startIso = drag.anchorIso <= dayIso ? drag.anchorIso : dayIso;
+  drag.endIso = drag.anchorIso <= dayIso ? dayIso : drag.anchorIso;
+}
+
+function finishMonthDayDragCreate() {
+  window.removeEventListener("pointerup", finishMonthDayDragCreate);
+  window.removeEventListener("pointercancel", finishMonthDayDragCreate);
+
+  const drag = monthDragCreate.value;
+  monthDragCreate.value = null;
+  if (!drag) return;
+
+  openQuickTaskPopover({
+    start_date: drag.startIso,
+    due_date: drag.endIso,
+    start_time: "",
+    end_time: "",
+  });
+}
+
+function isMonthCellDragHighlighted(week, dayIso) {
+  const drag = monthDragCreate.value;
+  if (!drag || drag.weekNumber !== week.weekNumber) return false;
+  return dayIso >= drag.startIso && dayIso <= drag.endIso;
+}
+
+async function handleUpdateTimedTask({ projectId, taskId, patch }) {
+  await updateSubtaskFields(projectId ?? 0, taskId, patch);
+}
+
+// ---------------------------------------------------------------------------
+// Command Palette & Global Keyboard Shortcuts
+// ---------------------------------------------------------------------------
+
+async function handleCommandPaletteAction(item) {
+  if (!item) return;
+  if (item.kind === "action") {
+    switch (item.action) {
+      case "new-task":
+        openQuickTaskPopover();
+        break;
+      case "jump-today":
+        activePage.value = "timeline";
+        jumpToToday();
+        break;
+      case "scale-day":
+        activePage.value = "timeline";
+        switchToDayMode();
+        break;
+      case "scale-week":
+        activePage.value = "timeline";
+        switchToWeekMode();
+        break;
+      case "scale-month":
+        activePage.value = "timeline";
+        calendarScaleMode.value = "month";
+        break;
+      case "scale-year":
+        activePage.value = "timeline";
+        calendarScaleMode.value = "year";
+        break;
+      case "overdue":
+        activePage.value = "timeline";
+        await enterOverdueMode(false);
+        break;
+      case "journal-today":
+        navigateToDailyJournal(todayIso.value);
+        break;
+      case "go-projects":
+        activePage.value = "kanban";
+        break;
+      case "open-archive":
+        showArchiveModal.value = true;
+        break;
+    }
+    return;
+  }
+
+  if (item.kind === "project") {
     openProjectDrawer(item.projectId, "subtasks");
+    return;
+  }
+
+  if (item.kind === "task") {
+    openProjectDrawer(item.projectId ?? 0, "subtasks");
+    return;
+  }
+
+  if (item.kind === "note") {
+    if (item.projectId) {
+      openProjectDrawer(item.projectId, "notes");
+    } else {
+      navigateToDailyJournal();
+    }
+  }
+}
+
+function handleGlobalKeydown(event) {
+  if (!currentUser.value) return;
+
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    showCommandPalette.value = !showCommandPalette.value;
+    return;
+  }
+
+  if (event.key === "Escape") {
+    if (showCommandPalette.value) {
+      showCommandPalette.value = false;
+      return;
+    }
+    if (quickTaskModalOpen.value) {
+      quickTaskModalOpen.value = false;
+      return;
+    }
+    if (showArchiveModal.value) {
+      showArchiveModal.value = false;
+      return;
+    }
+    if (showNewProjectModal.value) {
+      showNewProjectModal.value = false;
+      return;
+    }
+    if (showDisplayMenu.value) {
+      showDisplayMenu.value = false;
+      return;
+    }
+    if (selectedProjectId.value !== null) {
+      closeProjectDrawer();
+      return;
+    }
+    if (isJournalDrawerOpen.value) {
+      isJournalDrawerOpen.value = false;
+      return;
+    }
+  }
+
+  const tag = event.target?.tagName?.toLowerCase();
+  const isTyping =
+    tag === "input" ||
+    tag === "textarea" ||
+    tag === "select" ||
+    event.target?.isContentEditable;
+  if (
+    isTyping ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.altKey ||
+    showCommandPalette.value ||
+    quickTaskModalOpen.value ||
+    showArchiveModal.value ||
+    showNewProjectModal.value
+  ) {
+    return;
+  }
+
+  const key = event.key.toLowerCase();
+  if (key === "n") {
+    event.preventDefault();
+    openQuickTaskPopover();
+  } else if (key === "t" && activePage.value === "timeline") {
+    event.preventDefault();
+    jumpToToday();
+  } else if (key === "d" && activePage.value === "timeline") {
+    event.preventDefault();
+    switchToDayMode();
+  } else if (key === "w" && activePage.value === "timeline") {
+    event.preventDefault();
+    switchToWeekMode();
+  } else if (key === "m" && activePage.value === "timeline") {
+    event.preventDefault();
+    calendarScaleMode.value = "month";
+  } else if (key === "y" && activePage.value === "timeline") {
+    event.preventDefault();
+    calendarScaleMode.value = "year";
+  } else if (key === "o" && activePage.value === "timeline") {
+    event.preventDefault();
+    enterOverdueMode(false);
   }
 }
 
@@ -1111,12 +1895,13 @@ function handleTimelineCardClick(item) {
  * instead of heavy neon all-around borders.
  */
 function getCustomColorCardStyle(hexColor, extraGridStyle = {}) {
-  const c = hexColor || "#2c666e";
+  const c = hexColor || "#2a5f52";
   return {
     ...extraGridStyle,
-    borderColor: `${c}38`,
-    borderLeft: `3.5px solid ${c}`,
-    backgroundColor: `${c}10`,
+    borderColor: `${c}42`,
+    borderLeft: `3px solid ${c}`,
+    backgroundColor: `${c}14`,
+    boxShadow: "inset 0 1px 0 rgba(255, 250, 240, 0.65)",
   };
 }
 
@@ -1835,6 +2620,9 @@ function handleDocumentClick(e) {
   if (userDropdownRef.value && !userDropdownRef.value.contains(e.target)) {
     isUserDropdownOpen.value = false;
   }
+  if (displayMenuRef.value && !displayMenuRef.value.contains(e.target)) {
+    showDisplayMenu.value = false;
+  }
 }
 
 function handleUserUpdated(sessionData) {
@@ -2111,7 +2899,7 @@ function persistLocalProjectsAndTasks() {
   try {
     localStorage.setItem(
       getProjectStorageKey(),
-      JSON.stringify(projects.value)
+      JSON.stringify([...projects.value, ...archivedProjects.value])
     );
     localStorage.setItem(
       getTaskStorageKey(),
@@ -2129,9 +2917,12 @@ function loadLocalProjectsAndTasks() {
     const email = currentUser.value?.email?.trim().toLowerCase();
 
     if (rawP) {
-      projects.value = JSON.parse(rawP);
+      const parsedProjs = JSON.parse(rawP);
+      projects.value = parsedProjs.filter((p) => p && p.status !== "archived");
+      archivedProjects.value = parsedProjs.filter((p) => p && p.status === "archived");
     } else if (!currentUser.value || email === "bryce@example.com") {
       projects.value = [...DEFAULT_PROJECTS];
+      archivedProjects.value = [];
     } else {
       // Clean isolated starter project for this specific newly registered user
       projects.value = [
@@ -2140,7 +2931,8 @@ function loadLocalProjectsAndTasks() {
           name: "Personal Workspace",
           slug: "personal-workspace",
           description: `${currentUser.value.name || currentUser.value.email}'s synced workspace`,
-          color: "#b85423",
+          area: "",
+          color: "#c2410c",
           status: "active",
           is_pinned: true,
           sidebar_order: 0,
@@ -2148,6 +2940,7 @@ function loadLocalProjectsAndTasks() {
           target_date: "2026-11-30",
         },
       ];
+      archivedProjects.value = [];
     }
 
     if (rawT) {
@@ -2164,13 +2957,16 @@ function loadLocalProjectsAndTasks() {
     }
   } catch {
     projects.value = [];
+    archivedProjects.value = [];
     projectTasksMap.value = {};
   }
 }
 
 function clearWorkspaceData() {
   projects.value = [];
+  archivedProjects.value = [];
   projectTasksMap.value = {};
+  standaloneTasks.value = [];
   dailyJournalsMap.value = {};
   selectedProjectId.value = null;
   isJournalUnlocked.value = false;
@@ -2580,16 +3376,18 @@ function getYearProjectTaskRows(projId, pIdx) {
     ...t,
     code: `${prefix}${idx + 1}`,
   }));
-  const filtered = filterSubtasksByStatus(withCodes, taskFilterMode.value);
+  const filtered = filterSubtasksByStatus(withCodes, taskFilterMode.value, todayIso.value);
 
   const rows = [];
   let rowIndex = 2;
 
   for (let i = 0; i < filtered.length; i += 1) {
     const t = filtered[i];
+    const effectiveStart = t.deadline_only ? (t.due_date || t.start_date) : t.start_date;
+    const effectiveDue = t.deadline_only ? (t.due_date || t.start_date) : t.due_date;
     const span = computeYearMonthGridSpan(
-      t.start_date,
-      t.due_date,
+      effectiveStart,
+      effectiveDue,
       selectedYear.value
     );
     if (!span.visible) continue;
@@ -2608,6 +3406,12 @@ function getYearProjectTaskRows(projId, pIdx) {
 function stepCalendar(delta) {
   if (calendarScaleMode.value === "year") {
     selectedYear.value += delta;
+  } else if (calendarScaleMode.value === "day") {
+    selectedDayIso.value = shiftDateIso(selectedDayIso.value, delta);
+    const dt = new Date(selectedDayIso.value + "T00:00:00Z");
+    selectedYear.value = dt.getUTCFullYear();
+    selectedMonth.value = dt.getUTCMonth() + 1;
+    selectedWeekAnchorIso.value = selectedDayIso.value;
   } else if (calendarScaleMode.value === "week") {
     selectedWeekAnchorIso.value = shiftDateIso(selectedWeekAnchorIso.value, delta * 7);
     const dt = new Date(selectedWeekAnchorIso.value + "T00:00:00Z");
@@ -2634,9 +3438,14 @@ function drillIntoMonth(col) {
 
 async function fetchProjectsAndTimeline() {
   try {
-    const res = await fetch(`${API_BASE}/sidebar/projects`, {
-      headers: getAuthHeaders(),
-    });
+    const [res, archivedRes] = await Promise.all([
+      fetch(`${API_BASE}/sidebar/projects`, {
+        headers: getAuthHeaders(),
+      }),
+      fetch(`${API_BASE}/sidebar/projects?status_filter=archived`, {
+        headers: getAuthHeaders(),
+      }),
+    ]);
     if (res.ok) {
       const data = await res.json();
       projects.value = data.map((p, i) => ({
@@ -2649,6 +3458,9 @@ async function fetchProjectsAndTimeline() {
           p.target_date ||
           DEFAULT_PROJECTS[i % DEFAULT_PROJECTS.length].target_date,
       }));
+      if (archivedRes.ok) {
+        archivedProjects.value = await archivedRes.json();
+      }
       persistLocalProjectsAndTasks();
     } else {
       loadLocalProjectsAndTasks();
@@ -2673,9 +3485,7 @@ async function fetchProjectsAndTimeline() {
         }
       }
       projectTasksMap.value = grouped;
-      if (stList.length > 0) {
-        standaloneTasks.value = stList;
-      }
+      standaloneTasks.value = stList;
       persistLocalProjectsAndTasks();
     }
     const journalRes = await fetch(`${API_BASE}/journal`, {
@@ -2793,7 +3603,9 @@ async function executeWorkspaceReset() {
     }
 
     projects.value = [];
+    archivedProjects.value = [];
     projectTasksMap.value = {};
+    standaloneTasks.value = [];
     dailyJournalsMap.value = {};
     habitsList.value = [];
     habitAnalytics.value = { days: [], overall_stats: {}, habit_streaks: [] };
@@ -2842,8 +3654,9 @@ async function createNewProject(pinImmediately = null) {
   const payload = {
     name: newProject.value.name.trim(),
     description: newProject.value.description.trim(),
+    area: (newProject.value.area || "").trim(),
     status: newProject.value.status,
-    color: newProject.value.color || "#b85423",
+    color: newProject.value.color || "#c2410c",
     start_date: start || null,
     target_date: target || null,
     is_pinned: isPinned,
@@ -2861,8 +3674,10 @@ async function createNewProject(pinImmediately = null) {
       persistLocalProjectsAndTasks();
       newProject.value.name = "";
       newProject.value.description = "";
+      newProject.value.area = "";
       initTimelineNewProjectDates();
       showTimelineAddProject.value = false;
+      showNewProjectModal.value = false;
       openProjectDrawer(created.id, "subtasks");
       return;
     }
@@ -2878,8 +3693,10 @@ async function createNewProject(pinImmediately = null) {
   persistLocalProjectsAndTasks();
   newProject.value.name = "";
   newProject.value.description = "";
+  newProject.value.area = "";
   initTimelineNewProjectDates();
   showTimelineAddProject.value = false;
+  showNewProjectModal.value = false;
   openProjectDrawer(localProj.id, "subtasks");
 }
 
@@ -2910,18 +3727,100 @@ async function onProjectNameChange(proj, newName) {
   await updateProjectFields(proj, { name: trimmed });
 }
 
+async function archiveProject(proj) {
+  if (!proj) return;
+  const prevStatus = proj.status || "active";
+  projects.value = projects.value.filter((p) => p.id !== proj.id);
+  const archivedCopy = { ...proj, status: "archived" };
+  archivedProjects.value = [
+    archivedCopy,
+    ...archivedProjects.value.filter((p) => p.id !== proj.id),
+  ];
+  if (selectedProjectId.value === proj.id) {
+    closeProjectDrawer();
+  }
+  persistLocalProjectsAndTasks();
+
+  try {
+    await fetch(`${API_BASE}/projects/${proj.id}`, {
+      method: "PATCH",
+      headers: getAuthHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ status: "archived" }),
+    });
+  } catch (err) {
+    console.error("Failed to archive project:", err);
+  }
+
+  showNotification({
+    type: "info",
+    message: `Archived "${proj.name}"`,
+    undoLabel: "Undo",
+    undoFn: () => restoreArchivedProject(archivedCopy, prevStatus),
+  });
+}
+
+async function restoreArchivedProject(proj, targetStatus = "active") {
+  if (!proj) return;
+  const restoredStatus =
+    targetStatus && targetStatus !== "archived" ? targetStatus : "active";
+  archivedProjects.value = archivedProjects.value.filter((p) => p.id !== proj.id);
+  const restored = { ...proj, status: restoredStatus };
+  projects.value = [
+    ...projects.value.filter((p) => p.id !== proj.id),
+    restored,
+  ];
+  persistLocalProjectsAndTasks();
+
+  try {
+    const res = await fetch(`${API_BASE}/projects/${proj.id}`, {
+      method: "PATCH",
+      headers: getAuthHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ status: restoredStatus }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      Object.assign(restored, updated);
+      persistLocalProjectsAndTasks();
+    }
+  } catch (err) {
+    console.error("Failed to restore project:", err);
+  }
+
+  showNotification({
+    type: "success",
+    message: `Restored "${proj.name}"`,
+  });
+}
+
+async function archiveCompletedProjects() {
+  const completedList = projects.value.filter(
+    (p) => p.status !== "archived" && isProjectCompleted(p)
+  );
+  if (!completedList.length) return;
+  for (const p of completedList) {
+    await archiveProject(p);
+  }
+  showNotification({
+    type: "success",
+    message: `Archived ${completedList.length} completed project${completedList.length === 1 ? "" : "s"}`,
+  });
+}
+
 async function deleteProject(projectId) {
   if (!projectId) return;
-  const proj = projects.value.find((p) => p.id === projectId);
+  const proj =
+    projects.value.find((p) => p.id === projectId) ||
+    archivedProjects.value.find((p) => p.id === projectId);
   const name = proj ? proj.name : "this project";
   if (
     !window.confirm(
-      `Delete project "${name}" and all of its subtasks? This cannot be undone.`
+      `Permanently delete project "${name}" and all of its subtasks? This cannot be undone.`
     )
   ) {
     return;
   }
   projects.value = projects.value.filter((p) => p.id !== projectId);
+  archivedProjects.value = archivedProjects.value.filter((p) => p.id !== projectId);
   if (projectTasksMap.value && projectTasksMap.value[projectId]) {
     delete projectTasksMap.value[projectId];
   }
@@ -3098,9 +3997,14 @@ async function addSubtaskToSelectedProject() {
     title: newSubtask.value.title.trim(),
     description: newSubtask.value.description ? newSubtask.value.description.trim() : "",
     status: "todo",
+    priority: newSubtask.value.priority || "medium",
     color: newSubtask.value.color || (isInbox ? "#e11d48" : "#2c666e"),
     start_date: newSubtask.value.start_date || selectedProject.value.start_date,
     due_date: newSubtask.value.due_date || selectedProject.value.target_date,
+    start_time: newSubtask.value.start_time || null,
+    end_time: newSubtask.value.end_time || null,
+    is_milestone: Boolean(newSubtask.value.is_milestone),
+    deadline_only: Boolean(newSubtask.value.deadline_only),
   };
 
   try {
@@ -3123,6 +4027,9 @@ async function addSubtaskToSelectedProject() {
       persistLocalProjectsAndTasks();
       newSubtask.value.title = "";
       newSubtask.value.description = "";
+      newSubtask.value.start_time = "";
+      newSubtask.value.end_time = "";
+      newSubtask.value.is_milestone = false;
       return;
     }
   } catch {
@@ -3141,6 +4048,9 @@ async function addSubtaskToSelectedProject() {
   persistLocalProjectsAndTasks();
   newSubtask.value.title = "";
   newSubtask.value.description = "";
+  newSubtask.value.start_time = "";
+  newSubtask.value.end_time = "";
+  newSubtask.value.is_milestone = false;
 }
 
 async function toggleSubtaskStatus(projectId, taskId) {
@@ -3151,6 +4061,7 @@ async function toggleSubtaskStatus(projectId, taskId) {
 
   const nextStatus = target.status === "done" ? "todo" : "done";
   target.status = nextStatus;
+  target.progress = nextStatus === "done" ? 100 : 0;
   if (pKey === 0) {
     standaloneTasks.value = [...list];
   }
@@ -3237,6 +4148,7 @@ async function saveNote() {
 
 onMounted(async () => {
   document.addEventListener("click", handleDocumentClick);
+  window.addEventListener("keydown", handleGlobalKeydown);
   loadSavedAuthSession();
   loadLocalJournals();
   loadLocalProjectsAndTasks();
@@ -3247,6 +4159,14 @@ onMounted(async () => {
   await fetchTemplates();
   await fetchStickers();
   await fetchStickerPlacements();
+});
+
+onUnmounted(() => {
+  document.removeEventListener("click", handleDocumentClick);
+  window.removeEventListener("keydown", handleGlobalKeydown);
+  window.removeEventListener("pointerup", finishMonthDayDragCreate);
+  window.removeEventListener("pointercancel", finishMonthDayDragCreate);
+  if (toastTimer) clearTimeout(toastTimer);
 });
 </script>
 
@@ -3262,20 +4182,31 @@ onMounted(async () => {
     @register="handleRegister"
     @clear-last-user="handleClearLastUser"
   />
-  <div v-else class="editorial-app">
+  <div v-else class="editorial-app" :class="{ 'is-nav-open': isNavSpineOpen }">
+    <!-- Persistent Top-Left Logo Toggle (Opens/Closes Dark-Bronze Sidebar) -->
+    <button
+      type="button"
+      class="spine-logo-toggle"
+      :class="{ active: isNavSpineOpen }"
+      :aria-expanded="isNavSpineOpen"
+      :title="isNavSpineOpen ? 'Close navigation sidebar' : 'Open navigation sidebar'"
+      aria-label="Toggle navigation sidebar"
+      @click="isNavSpineOpen = !isNavSpineOpen"
+    >
+      <span class="brand-mark" aria-hidden="true">
+        <ChronoNoteLogo
+          :size="22"
+          dial-color="var(--spine-dial, #f8f4ec)"
+          accent-color="var(--spine-accent, #e07b39)"
+          paper-color="var(--spine-paper, #271e18)"
+        />
+      </span>
+    </button>
+
     <!-- =====================================================================
-         EDITORIAL TOP BAR: Warm Serif Wordmark, Navigation Tabs & Google Account
+         COLLAPSIBLE BROWN SPINE RAIL: Vertical Index Tabs, Search & Account
          ===================================================================== -->
     <header class="minimal-topbar">
-      <div class="brand-lockup">
-        <span class="brand-mark" aria-hidden="true">
-          <ChronoNoteLogo :size="22" />
-        </span>
-        <div class="brand-text">
-          <span class="brand-accent">ChronoNote</span>
-          <span class="brand-subtitle">Personal Journal &amp; Timeline</span>
-        </div>
-      </div>
 
       <nav class="primary-tabs" role="tablist" aria-label="Workspace Pages">
         <button
@@ -3284,8 +4215,8 @@ onMounted(async () => {
           :class="{ active: activePage === 'timeline' }"
           @click="activePage = 'timeline'"
         >
-          Calendar Timeline
-          <span class="tab-count">{{ pinnedProjects.length }}</span>
+          <span class="tab-index-num">01</span>
+          <span>Calendar</span>
         </button>
         <button
           type="button"
@@ -3293,8 +4224,8 @@ onMounted(async () => {
           :class="{ active: activePage === 'journal' }"
           @click="navigateToDailyJournal()"
         >
-          Daily Journal
-          <span class="tab-count">{{ sortedJournalEntries.length }}</span>
+          <span class="tab-index-num">02</span>
+          <span>Journal</span>
         </button>
         <button
           type="button"
@@ -3302,7 +4233,8 @@ onMounted(async () => {
           :class="{ active: activePage === 'kanban' }"
           @click="activePage = 'kanban'"
         >
-          Projects Board
+          <span class="tab-index-num">03</span>
+          <span>Projects</span>
         </button>
         <button
           type="button"
@@ -3313,13 +4245,8 @@ onMounted(async () => {
             fetchHabitsAndAnalytics();
           "
         >
-          Habits &amp; Heatmap
-          <span
-            v-if="habitAnalytics.overall_stats && habitAnalytics.overall_stats.best_current_streak"
-            class="tab-count fire-tab-badge"
-          >
-            {{ habitAnalytics.overall_stats.best_current_streak }}d
-          </span>
+          <span class="tab-index-num">04</span>
+          <span>Habits</span>
         </button>
         <button
           type="button"
@@ -3330,18 +4257,33 @@ onMounted(async () => {
             fetchWorkspaceNotes();
           "
         >
-          Study &amp; Pomodoro
-          <span class="tab-count study-badge-count">Focus</span>
+          <span class="tab-index-num">05</span>
+          <span>Study</span>
         </button>
       </nav>
 
       <div class="topbar-right">
+        <button
+          type="button"
+          class="cmd-trigger-btn"
+          title="Search & commands (Ctrl+K)"
+          aria-label="Search and commands"
+          @click="showCommandPalette = true"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <span class="spine-hide-label">Search</span>
+          <kbd class="cmd-trigger-kbd spine-hide-label">⌘K</kbd>
+        </button>
         <!-- Minimal User Dropdown (Encapsulates Account, Protect Journal, Today's Journal, Stickers, Theme, Connect Claude) -->
         <div ref="userDropdownRef" class="user-dropdown-container">
           <button
             type="button"
             class="user-dropdown-trigger"
             :class="{ active: isUserDropdownOpen }"
+            :title="currentUser?.name || currentUser?.email || 'Account menu'"
             aria-label="User account and quick navigation menu"
             @click="isUserDropdownOpen = !isUserDropdownOpen"
           >
@@ -3354,7 +4296,7 @@ onMounted(async () => {
             <span v-else class="user-avatar-monogram">
               {{ (currentUser?.name || currentUser?.email || "U").charAt(0).toUpperCase() }}
             </span>
-            <span class="user-name-label">{{ currentUser?.name || currentUser?.email || "Account" }}</span>
+            <span class="user-name-label spine-hide-label">{{ currentUser?.name || currentUser?.email || "Account" }}</span>
             <svg class="chevron-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="6 9 12 15 18 9" />
             </svg>
@@ -3551,78 +4493,123 @@ onMounted(async () => {
     <main
       v-if="activePage === 'kanban'"
       class="kanban-page"
-      aria-label="Projects Kanban Page"
+      aria-label="Projects Board Page"
     >
-      <form class="new-project-bar" @submit.prevent="createNewProject(null)">
-        <input
-          v-model="newProject.name"
-          type="text"
-          class="input-minimal"
-          placeholder="New project title…"
-          required
-        />
-        <input
-          v-model="newProject.description"
-          type="text"
-          class="input-minimal"
-          placeholder="Brief scope or objective…"
-        />
-        <select v-model="newProject.status" class="input-minimal">
-          <option value="planned">Planned</option>
-          <option value="active">Active</option>
-          <option value="on_hold">On Hold</option>
-          <option value="completed">Completed</option>
-        </select>
-        <label class="date-field-inline">
-          <span>Tone</span>
-          <input
-            v-model="newProject.color"
-            type="color"
-            class="color-picker-input"
-          />
-        </label>
-        <label class="date-field-inline">
-          <span>Start</span>
-          <input
-            v-model="newProject.start_date"
-            type="date"
-            class="input-minimal"
-          />
-        </label>
-        <label class="date-field-inline">
-          <span>Target</span>
-          <input
-            v-model="newProject.target_date"
-            type="date"
-            class="input-minimal"
-          />
-        </label>
-        <label class="pin-check-inline">
-          <input v-model="newProject.is_pinned" type="checkbox" />
-          <span>Show on Timeline</span>
-        </label>
-        <button type="submit" class="btn-orange-primary">Add Project</button>
-      </form>
+      <div class="projects-toolbar-bar">
+        <div class="projects-toolbar-left">
+          <div class="segmented-scale" role="group" aria-label="Projects View">
+            <button
+              type="button"
+              class="scale-btn"
+              :class="{ active: projectsPageView === 'board' }"
+              @click="projectsPageView = 'board'"
+            >
+              Board
+            </button>
+            <button
+              type="button"
+              class="scale-btn"
+              :class="{ active: projectsPageView === 'list' }"
+              @click="projectsPageView = 'list'"
+            >
+              List
+            </button>
+            <button
+              type="button"
+              class="scale-btn"
+              :class="{ active: projectsPageView === 'archive' }"
+              @click="projectsPageView = 'archive'"
+            >
+              Archive ({{ archivedProjects.length }})
+            </button>
+          </div>
 
-      <div class="projects-kanban-grid">
+          <input
+            v-if="projectsPageView !== 'archive'"
+            v-model="projectsSearchQuery"
+            type="text"
+            class="input-minimal projects-search-input"
+            placeholder="Filter projects…"
+          />
+
+          <select
+            v-if="projectsPageView !== 'archive' && projectAreas.length > 0"
+            v-model="selectedAreaFilter"
+            class="input-minimal projects-area-select"
+            aria-label="Filter by folder"
+          >
+            <option value="all">All folders</option>
+            <option v-for="ar in projectAreas" :key="ar" :value="ar">
+              {{ ar }}
+            </option>
+            <option value="__none__">Uncategorized</option>
+          </select>
+
+          <label
+            v-if="projectsPageView !== 'archive'"
+            class="pin-check-inline"
+          >
+            <input v-model="hideCompletedProjects" type="checkbox" />
+            <span>Hide completed</span>
+          </label>
+        </div>
+
+        <div class="projects-toolbar-right">
+          <button
+            v-if="projects.some((p) => p.status !== 'archived' && isProjectCompleted(p))"
+            type="button"
+            class="btn-editorial-ghost"
+            title="Move all completed projects into Archive Vault"
+            @click="archiveCompletedProjects"
+          >
+            Archive Completed
+          </button>
+          <button
+            type="button"
+            class="btn-ink-primary"
+            @click="showNewProjectModal = true"
+          >
+            + New Project
+          </button>
+        </div>
+      </div>
+
+      <div class="projects-body-wrap">
+      <!-- VIEW 1: CLEAN KANBAN BOARD -->
+      <div v-if="projectsPageView === 'board'" class="projects-kanban-grid">
         <section
-          v-for="col in projectKanbanColumns"
+          v-for="(col, colIdx) in projectKanbanColumns"
           :key="col.status"
           class="project-kanban-column"
           :class="{
             'drag-over-column':
               draggedProjectId !== null && dragOverColumnStatus === col.status,
+            'is-collapsed-col': collapsedKanbanCols[col.status],
           }"
           @dragover.prevent="onColumnDragOver($event, col.status)"
           @dragleave="onColumnDragLeave($event, col.status)"
           @drop.prevent="onColumnDrop($event, col.status)"
         >
           <header class="kanban-col-header">
-            <span class="col-title">{{ col.label }}</span>
-            <span class="col-count">{{ col.count }}</span>
+            <span class="col-title-wrap">
+              <span class="col-index-num">0{{ colIdx + 1 }}</span>
+              <span class="col-title">{{ col.label }}</span>
+            </span>
+            <div class="kanban-col-head-right">
+              <span class="col-count">{{ col.count }}</span>
+              <button
+                v-if="col.status === 'completed' || col.status === 'on_hold'"
+                type="button"
+                class="kanban-col-collapse-btn"
+                :title="collapsedKanbanCols[col.status] ? 'Expand column' : 'Collapse column'"
+                @click="collapsedKanbanCols[col.status] = !collapsedKanbanCols[col.status]"
+              >
+                {{ collapsedKanbanCols[col.status] ? "▸" : "▾" }}
+              </button>
+            </div>
           </header>
 
-          <div class="kanban-cards-stack">
+          <div v-if="!collapsedKanbanCols[col.status]" class="kanban-cards-stack">
             <article
               v-for="proj in col.projects"
               :key="proj.id"
@@ -3639,7 +4626,6 @@ onMounted(async () => {
                   draggedProjectId !== proj.id,
               }"
               draggable="true"
-              :style="getCustomColorCardStyle(proj.color || '#b85423')"
               @dragstart="onProjectDragStart($event, proj)"
               @dragend="onProjectDragEnd"
               @dragover.prevent.stop="onCardDragOver($event, proj, col.status)"
@@ -3649,64 +4635,8 @@ onMounted(async () => {
               <div class="pcard-top">
                 <div class="pcard-title-row">
                   <span
-                    class="drag-handle-grip"
-                    title="Drag project to another column or reorder"
-                    aria-hidden="true"
-                  >
-                    <svg
-                      width="12"
-                      height="14"
-                      viewBox="0 0 12 14"
-                      fill="currentColor"
-                    >
-                      <circle cx="3.5" cy="2.5" r="1.2" />
-                      <circle cx="8.5" cy="2.5" r="1.2" />
-                      <circle cx="3.5" cy="7" r="1.2" />
-                      <circle cx="8.5" cy="7" r="1.2" />
-                      <circle cx="3.5" cy="11.5" r="1.2" />
-                      <circle cx="8.5" cy="11.5" r="1.2" />
-                    </svg>
-                  </span>
-                  <button
-                    type="button"
-                    class="subtask-check-btn"
-                    :class="{ checked: isProjectCompleted(proj) }"
-                    :style="
-                      isProjectCompleted(proj)
-                        ? {
-                            backgroundColor: proj.color || '#b85423',
-                            borderColor: proj.color || '#b85423',
-                          }
-                        : { borderColor: proj.color || '#b85423' }
-                    "
-                    :title="
-                      isProjectCompleted(proj)
-                        ? 'Mark project active (show on calendar)'
-                        : 'Mark project done (hide from calendar)'
-                    "
-                    @click.stop="toggleProjectDoneStatus(proj)"
-                  >
-                    <svg
-                      v-if="isProjectCompleted(proj)"
-                      width="11"
-                      height="11"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="3"
-                    >
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                  </button>
-                  <input
-                    type="color"
-                    class="color-picker-mini"
-                    :value="proj.color || '#b85423'"
-                    title="Customize project color"
-                    @click.stop
-                    @input="
-                      updateProjectFields(proj, { color: $event.target.value })
-                    "
+                    class="sidebar-dot"
+                    :style="{ backgroundColor: proj.color || '#c2410c' }"
                   />
                   <strong
                     class="pcard-title"
@@ -3718,102 +4648,74 @@ onMounted(async () => {
                 <div class="pcard-top-actions" @click.stop>
                   <button
                     type="button"
-                    class="project-status-toggle-btn"
-                    :class="{ done: isProjectCompleted(proj) }"
-                    @click="toggleProjectDoneStatus(proj)"
-                  >
-                    {{ isProjectCompleted(proj) ? "✓ Done" : "Active" }}
-                  </button>
-                  <button
-                    type="button"
-                    class="pin-toggle-pill"
-                    :class="{ pinned: proj.is_pinned }"
-                    @click="
-                      updateProjectFields(proj, { is_pinned: !proj.is_pinned })
-                    "
+                    class="pcard-icon-btn"
+                    :class="{ active: proj.is_pinned }"
+                    :title="proj.is_pinned ? 'Unpin from calendar' : 'Pin to calendar'"
+                    @click="updateProjectFields(proj, { is_pinned: !proj.is_pinned })"
                   >
                     {{ proj.is_pinned ? "Pinned" : "Pin" }}
                   </button>
                   <button
                     type="button"
-                    class="delete-project-icon-btn"
-                    title="Delete project"
-                    @click="deleteProject(proj.id)"
+                    class="pcard-icon-btn"
+                    title="Archive project"
+                    @click="archiveProject(proj)"
                   >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="3 6 5 6 21 6" />
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                      </svg>
+                    Archive
                   </button>
                 </div>
+              </div>
+
+              <div v-if="proj.area || proj.overdue_tasks > 0" class="pcard-tags-row">
+                <span v-if="proj.area" class="project-area-tag">{{ proj.area }}</span>
+                <span v-if="proj.overdue_tasks > 0" class="overdue-tag-pill">
+                  {{ proj.overdue_tasks }} overdue
+                </span>
               </div>
 
               <p v-if="proj.description" class="pcard-desc">
                 {{ proj.description }}
               </p>
 
-              <div class="pcard-dates" @click.stop>
-                <label class="date-mini">
-                  <span>Start</span>
-                  <input
-                    :value="proj.start_date"
-                    type="date"
-                    @change="
-                      updateProjectFields(proj, {
-                        start_date: $event.target.value,
-                      })
-                    "
-                  />
-                </label>
-                <span class="date-arrow">→</span>
-                <label class="date-mini">
-                  <span>Target</span>
-                  <input
-                    :value="proj.target_date"
-                    type="date"
-                    @change="
-                      updateProjectFields(proj, {
-                        target_date: $event.target.value,
-                      })
-                    "
-                  />
-                </label>
+              <!-- Slim 2px progress bar -->
+              <div
+                v-if="(projectTasksMap[proj.id] || []).length > 0"
+                class="pcard-progress-track"
+                :title="`${proj.progress_pct || 0}% complete`"
+              >
+                <div
+                  class="pcard-progress-fill"
+                  :style="{
+                    width: `${
+                      Math.round(
+                        ((projectTasksMap[proj.id] || []).filter(
+                          (t) => t.status === 'done' || t.progress === 100
+                        ).length /
+                          Math.max((projectTasksMap[proj.id] || []).length, 1)) *
+                          100
+                      )
+                    }%`,
+                    backgroundColor: proj.color || '#c2410c',
+                  }"
+                />
               </div>
 
               <div class="pcard-footer" @click.stop>
-                <div class="status-move-group">
-                  <button
-                    v-for="targetCol in projectKanbanColumns"
-                    :key="targetCol.status"
-                    v-show="targetCol.status !== col.status"
-                    type="button"
-                    class="move-chip"
-                    @click="updateProjectFields(proj, { status: targetCol.status })"
-                  >
-                    → {{ targetCol.label }}
-                  </button>
-                </div>
+                <span class="mono-dates">
+                  {{ proj.start_date || "—" }} → {{ proj.target_date || "—" }}
+                </span>
                 <div class="pcard-footer-actions">
                   <button
                     type="button"
                     class="kanban-subtasks-vis-btn"
                     :class="{ active: isProjectSubtasksVisible(proj.id) }"
-                    :title="
-                      isProjectSubtasksVisible(proj.id)
-                        ? 'Subtasks are visible on timeline · Click to hide'
-                        : 'Click to show subtasks on timeline even if project bar is unpinned'
-                    "
                     @click="toggleProjectSubtasksVisibility(proj.id)"
                   >
-                    {{ isProjectSubtasksVisible(proj.id) ? 'Subtasks On' : 'Subtasks' }}
+                    {{ isProjectSubtasksVisible(proj.id) ? "Timeline On" : "Timeline" }}
                   </button>
-                  <button
-                    type="button"
-                    class="note-link-btn"
-                    @click="openProjectDrawer(proj.id, 'subtasks')"
-                  >
-                    Tasks ({{ (projectTasksMap[proj.id] || []).length }})
-                  </button>
+                  <span class="pcard-task-count">
+                    {{ (projectTasksMap[proj.id] || []).length }} tasks
+                  </span>
                 </div>
               </div>
             </article>
@@ -3827,10 +4729,139 @@ onMounted(async () => {
                   dragOverColumnStatus === col.status,
               }"
             >
-              <span>Drop project here</span>
+              <span>Drop here</span>
             </div>
           </div>
         </section>
+      </div>
+
+      <!-- VIEW 2: COMPACT LIST / TABLE -->
+      <div v-else-if="projectsPageView === 'list'" class="projects-list-table-wrap">
+        <table class="projects-list-table">
+          <thead>
+            <tr>
+              <th>Project</th>
+              <th>Folder</th>
+              <th>Status</th>
+              <th>Timeline</th>
+              <th>Tasks</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="proj in filteredProjectsForBoard"
+              :key="proj.id"
+              class="projects-list-row"
+              @click="openProjectDrawer(proj.id, 'subtasks')"
+            >
+              <td>
+                <div class="list-proj-name-cell">
+                  <span
+                    class="sidebar-dot"
+                    :style="{ backgroundColor: proj.color || '#c2410c' }"
+                  />
+                  <strong :class="{ 'strikethrough-done': isProjectCompleted(proj) }">
+                    {{ proj.name }}
+                  </strong>
+                </div>
+              </td>
+              <td>
+                <span v-if="proj.area" class="project-area-tag">{{ proj.area }}</span>
+                <span v-else class="text-faint">—</span>
+              </td>
+              <td @click.stop>
+                <select
+                  :value="proj.status"
+                  class="input-minimal list-status-select"
+                  @change="updateProjectFields(proj, { status: $event.target.value })"
+                >
+                  <option value="planned">Planned</option>
+                  <option value="active">Active</option>
+                  <option value="on_hold">On Hold</option>
+                  <option value="completed">Completed</option>
+                </select>
+              </td>
+              <td class="mono-dates">
+                {{ proj.start_date || "—" }} → {{ proj.target_date || "—" }}
+              </td>
+              <td class="mono-dates">
+                {{
+                  (projectTasksMap[proj.id] || []).filter(
+                    (t) => t.status === "done" || t.progress === 100
+                  ).length
+                }}
+                / {{ (projectTasksMap[proj.id] || []).length }}
+              </td>
+              <td class="list-actions-cell" @click.stop>
+                <button
+                  type="button"
+                  class="pcard-icon-btn"
+                  :class="{ active: proj.is_pinned }"
+                  @click="updateProjectFields(proj, { is_pinned: !proj.is_pinned })"
+                >
+                  {{ proj.is_pinned ? "Pinned" : "Pin" }}
+                </button>
+                <button
+                  type="button"
+                  class="pcard-icon-btn"
+                  @click="archiveProject(proj)"
+                >
+                  Archive
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-if="filteredProjectsForBoard.length === 0" class="archive-empty-state">
+          No projects match the current filters.
+        </div>
+      </div>
+
+      <!-- VIEW 3: INLINE ARCHIVE VAULT -->
+      <div v-else class="projects-archive-inline">
+        <div
+          v-for="proj in archivedProjects"
+          :key="proj.id"
+          class="archive-vault-row"
+        >
+          <div class="archive-row-main">
+            <span
+              class="sidebar-dot"
+              :style="{ backgroundColor: proj.color || '#71717a' }"
+            />
+            <div class="archive-row-info">
+              <div class="archive-row-title-line">
+                <strong class="archive-row-name">{{ proj.name }}</strong>
+                <span v-if="proj.area" class="project-area-tag">{{ proj.area }}</span>
+              </div>
+              <span class="archive-row-meta">
+                {{ proj.start_date || "—" }} → {{ proj.target_date || "—" }} ·
+                {{ (projectTasksMap[proj.id] || []).length }} tasks
+              </span>
+            </div>
+          </div>
+          <div class="archive-row-actions">
+            <button
+              type="button"
+              class="btn-editorial-ghost"
+              @click="restoreArchivedProject(proj)"
+            >
+              Restore
+            </button>
+            <button
+              type="button"
+              class="delete-project-btn"
+              @click="deleteProject(proj.id)"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+        <div v-if="archivedProjects.length === 0" class="archive-empty-state">
+          No archived projects yet.
+        </div>
+      </div>
       </div>
     </main>
 
@@ -3845,7 +4876,7 @@ onMounted(async () => {
       <!-- Left Column: Chronological Journal Stream & Date Picker -->
       <aside class="journal-stream-sidebar">
         <div class="sidebar-top-row">
-          <span class="sidebar-heading">DAILY ENTRIES</span>
+          <span class="sidebar-heading">Entries</span>
           <input
             type="date"
             class="input-minimal date-jump-input"
@@ -3891,13 +4922,16 @@ onMounted(async () => {
             >
               ‹
             </button>
+            <span class="journal-poster-day" aria-hidden="true">
+              {{ (selectedJournalDate || "").slice(8, 10) }}
+            </span>
             <div class="journal-title-editor-block">
               <span class="journal-kicker">{{ formattedJournalHeading.full }}</span>
               <input
                 v-model="journalDraftTitle"
                 type="text"
                 class="journal-title-input editorial-serif-heading"
-                :placeholder="`Journal — ${selectedJournalDate}`"
+                :placeholder="formattedJournalHeading.full"
                 title="Click to edit journal title"
                 @blur="saveDailyJournalEntry"
               />
@@ -3916,12 +4950,12 @@ onMounted(async () => {
             <span v-if="journalSaveStatus === 'saved'" class="save-pill">
               Saved
             </span>
-            <label class="btn-ocr-scanner">
+            <label class="btn-ocr-scanner" title="Scan Handwritten Page (OCR)">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                 <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
                 <circle cx="12" cy="13" r="4" />
               </svg>
-              <span>Scan Handwritten Page (OCR)</span>
+              <span>Scan OCR</span>
               <input
                 type="file"
                 accept="image/*"
@@ -3938,7 +4972,7 @@ onMounted(async () => {
                 <circle cx="8.5" cy="8.5" r="1.5" />
                 <polyline points="21 15 16 10 5 21" />
               </svg>
-              <span>+ Image (Draggable)</span>
+              <span>+ Float Image</span>
               <input
                 type="file"
                 accept="image/*"
@@ -3954,7 +4988,7 @@ onMounted(async () => {
                 <line x1="16" y1="15" x2="21" y2="15" />
                 <line x1="3" y1="21" x2="21" y2="21" />
               </svg>
-              <span>+ Image (Inline)</span>
+              <span>+ Inline Image</span>
               <input
                 type="file"
                 accept="image/*"
@@ -3987,7 +5021,7 @@ onMounted(async () => {
                 <path d="M4 9V4h5" /><path d="M20 9V4h-5" />
                 <path d="M4 15v5h5" /><path d="M20 15v5h-5" />
               </svg>
-              <span>{{ isJournalMediaEditing ? 'Done arranging' : 'Arrange media' }}</span>
+              <span>{{ isJournalMediaEditing ? 'Done' : 'Arrange' }}</span>
             </button>
 
             <button
@@ -4000,7 +5034,7 @@ onMounted(async () => {
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                 <path d="M7 11V7a5 5 0 0 1 10 0v4" />
               </svg>
-              <span>{{ hasJournalPassword ? "Lock Session" : "Protect" }}</span>
+              <span>{{ hasJournalPassword ? "Lock" : "Protect" }}</span>
             </button>
 
             <!-- Templates Dropdown -->
@@ -4019,7 +5053,7 @@ onMounted(async () => {
                 <span>Templates ▾</span>
               </button>
               <div v-if="showTemplateMenu" class="template-dropdown-menu">
-                <div class="template-menu-header">APPLY TEMPLATE</div>
+                <div class="template-menu-header">Templates</div>
                 <button
                   v-for="tpl in availableTemplates"
                   :key="tpl.id"
@@ -4055,9 +5089,10 @@ onMounted(async () => {
           </div>
         </header>
 
+        <div class="journal-surface-body">
         <!-- Interactive Habit Quick Bar -->
         <div v-if="activeHabits.length > 0" class="journal-habit-quick-bar">
-          <span class="habit-bar-kicker">HABITS</span>
+          <span class="habit-bar-kicker">Habits</span>
           <div class="habit-pills-list">
             <button
               v-for="h in activeHabits"
@@ -4217,7 +5252,7 @@ onMounted(async () => {
             ]"
             title="Click to write or edit markdown"
             @scroll="handleJournalContentScroll"
-            @click="startEditingJournal(false)"
+            @click="handleJournalPreviewClick($event, false)"
           >
             <div
               v-if="journalDraftMd && journalDraftMd.trim()"
@@ -4262,6 +5297,7 @@ onMounted(async () => {
         >
           Click to edit markdown
         </button>
+        </div>
       </section>
     </main>
 
@@ -4309,7 +5345,12 @@ onMounted(async () => {
     <!-- =====================================================================
          PAGE 3: SPACIOUS CALENDAR TIMELINE (Click any date for Daily Journal!)
          ===================================================================== -->
-    <main v-else class="timeline-page" aria-label="Calendar Timeline Page">
+    <main
+      v-else
+      class="timeline-page"
+      :class="{ 'is-sidebar-collapsed': isSidebarCollapsed }"
+      aria-label="Calendar Timeline Page"
+    >
       <!-- Mobile Projects Sidebar Toggle Bar -->
       <div class="mobile-sidebar-toggle-bar">
         <button
@@ -4319,34 +5360,48 @@ onMounted(async () => {
         >
           {{
             showMobileProjectsSidebar
-              ? "Hide Projects List"
-              : `Projects (${pinnedProjects.length} pinned)`
+              ? "Hide Projects"
+              : `Projects (${pinnedProjects.length})`
           }}
         </button>
         <button
           type="button"
-          class="btn-ocr-scanner"
-          @click="openDailyJournalForDate(selectedJournalDate, true)"
+          class="btn-ink-primary"
+          @click="openQuickTaskPopover()"
         >
-          Open {{ formattedJournalHeading.short }} Journal
+          + Task
         </button>
       </div>
 
-      <!-- Left Sidebar: Pick Pinned Projects + Add New Project Directly to Timeline -->
+      <!-- Left Sidebar: Calm, Collapsible, Grouped Projects Drawer -->
       <aside
         class="timeline-left-sidebar"
-        :class="{ 'mobile-open': showMobileProjectsSidebar }"
+        :class="{
+          'mobile-open': showMobileProjectsSidebar,
+          'desktop-collapsed': isSidebarCollapsed,
+        }"
         aria-label="Projects Sidebar"
       >
         <div class="sidebar-top-row">
-          <span class="sidebar-heading">PROJECTS ON TIMELINE</span>
-          <button
-            type="button"
-            class="btn-orange-mini"
-            @click="toggleTimelineAddProject"
-          >
-            {{ showTimelineAddProject ? "Cancel" : "+ New" }}
-          </button>
+          <span class="sidebar-heading">Workspace</span>
+          <div class="sidebar-top-actions">
+            <button
+              type="button"
+              class="btn-orange-mini"
+              @click="toggleTimelineAddProject"
+            >
+              {{ showTimelineAddProject ? "Cancel" : "+ Project" }}
+            </button>
+            <button
+              type="button"
+              class="sidebar-collapse-btn"
+              title="Collapse sidebar"
+              aria-label="Collapse sidebar"
+              @click="isSidebarCollapsed = true"
+            >
+              ‹
+            </button>
+          </div>
         </div>
 
         <form
@@ -4361,6 +5416,13 @@ onMounted(async () => {
             placeholder="Project title…"
             required
           />
+          <input
+            v-model="newProject.area"
+            type="text"
+            list="project-area-suggestions"
+            class="input-minimal"
+            placeholder="Folder / area (optional)…"
+          />
           <div class="sidebar-form-dates">
             <label class="date-mini">
               <span>Start</span>
@@ -4372,7 +5434,7 @@ onMounted(async () => {
             </label>
           </div>
           <div class="swatch-row">
-            <span class="swatch-label">Tone:</span>
+            <span class="swatch-label">Tone</span>
             <input
               v-model="newProject.color"
               type="color"
@@ -4388,205 +5450,240 @@ onMounted(async () => {
               @click="newProject.color = sw"
             />
           </div>
-          <button type="submit" class="btn-orange-primary">
-            Add &amp; Pin to Timeline
+          <button type="submit" class="btn-ink-primary">
+            Create &amp; Pin
           </button>
         </form>
 
-        <p class="sidebar-hint">
-          Select a project to manage subtasks, or click any date on the calendar to open that day’s journal.
-        </p>
+        <!-- Search & Folder Filter -->
+        <div class="sidebar-filter-controls">
+          <input
+            v-model="sidebarSearchQuery"
+            type="text"
+            class="sidebar-search-input"
+            placeholder="Filter projects…"
+          />
+          <select
+            v-if="projectAreas.length > 0"
+            v-model="selectedAreaFilter"
+            class="sidebar-area-select"
+            aria-label="Filter projects by folder"
+          >
+            <option value="all">All folders</option>
+            <option v-for="ar in projectAreas" :key="ar" :value="ar">
+              {{ ar }}
+            </option>
+            <option value="__none__">Uncategorized</option>
+          </select>
+        </div>
 
         <!-- Overdue Tasks Banner (Visible when overdue items exist) -->
         <div
           v-if="totalOverdueTasksCount > 0"
           class="sidebar-overdue-alert clickable-card"
           :class="{ active: taskFilterMode === 'overdue' }"
-          title="Click to filter all overdue tasks across projects and inbox"
-          @click="taskFilterMode = taskFilterMode === 'overdue' ? 'all' : 'overdue'"
+          title="Click to jump to overdue tasks across projects and inbox"
+          @click="enterOverdueMode(true)"
         >
           <div class="overdue-alert-left">
             <span class="overdue-alert-icon">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="12" cy="12" r="10" />
-                  <line x1="12" y1="8" x2="12" y2="12" />
-                  <line x1="12" y1="16" x2="12.01" y2="16" />
-                </svg>
-              </span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+            </span>
             <strong class="overdue-alert-title">{{ totalOverdueTasksCount }} Overdue</strong>
           </div>
           <span class="overdue-count-pill">{{ totalOverdueTasksCount }}</span>
         </div>
 
-        <div class="sidebar-project-picker">
+        <div class="sidebar-scroll-list">
           <!-- Standalone One-Off Tasks / Inbox Row -->
           <div
-            class="picker-row clickable-card is-inbox-row"
+            class="sidebar-flat-row is-inbox-row"
             :class="{ active: selectedProjectId === 0 }"
-            style="border-left: 3.5px solid #e11d48;"
-            title="Decoupled standalone one-off tasks not tied to any project"
+            title="Standalone tasks not tied to a project"
             @click="openProjectDrawer(0, 'subtasks')"
           >
-            <div class="picker-left">
-              <span class="picker-indicator" style="background-color: #e11d48"></span>
-              <div class="picker-info">
-                <span class="picker-name">One-Off Tasks (Inbox)</span>
-                <span class="picker-dates">Decoupled tasks &amp; quick to-dos</span>
-              </div>
-            </div>
-            <div class="picker-badges">
-              <span class="badge-count">{{ standaloneTasks.length }}</span>
-            </div>
+            <span class="sidebar-dot" style="background-color: var(--danger)"></span>
+            <span class="sidebar-row-name">Inbox (One-Off)</span>
+            <span class="sidebar-row-count">
+              {{ standalonePendingCount }}/{{ standaloneTasks.length }}
+            </span>
           </div>
-          <div
-            v-for="proj in sidebarProjects"
-            :key="proj.id"
-            class="picker-row clickable-card"
-            :class="{
-              active: proj.is_pinned,
-              'is-completed-project-row': isProjectCompleted(proj),
-            }"
-            :style="{
-              borderLeft: `3.5px solid ${proj.color || '#b85423'}`,
-              borderColor:
-                selectedProjectId === proj.id
-                  ? proj.color || '#b85423'
-                  : undefined,
-            }"
-            @click="openProjectDrawer(proj.id, 'subtasks')"
+
+          <!-- Collapsible Project Sections -->
+          <template
+            v-for="sec in [
+              { key: 'pinned', label: 'Pinned', items: sidebarGroups.pinned },
+              { key: 'active', label: 'Active', items: sidebarGroups.active },
+              { key: 'later', label: 'Planned & On Hold', items: sidebarGroups.later },
+              { key: 'completed', label: 'Completed', items: sidebarGroups.completed },
+            ]"
+            :key="sec.key"
           >
-            <div class="picker-top-line">
-              <label
-                class="picker-label"
-                title="Pin or unpin from calendar"
-                @click.stop
-              >
-                <input
-                  type="checkbox"
-                  :checked="proj.is_pinned"
-                  @change="
-                    updateProjectFields(proj, {
-                      is_pinned: $event.target.checked,
-                    })
-                  "
-                />
-              </label>
-              <span
-                class="picker-name"
-                :class="{ 'strikethrough-done': isProjectCompleted(proj) }"
-              >
-                {{ proj.name }}
-              </span>
+            <div v-if="sec.items.length > 0" class="sidebar-section">
               <button
                 type="button"
-                class="project-status-toggle-btn"
-                :class="{ done: isProjectCompleted(proj) }"
-                :title="
-                  isProjectCompleted(proj)
-                    ? 'Project is Done — click to mark Active'
-                    : 'Project is Active — click to mark Done'
-                "
-                @click.stop="toggleProjectDoneStatus(proj)"
+                class="sidebar-section-head"
+                @click="sidebarSectionsOpen[sec.key] = !sidebarSectionsOpen[sec.key]"
               >
-                {{ isProjectCompleted(proj) ? "✓ Done" : "Active" }}
+                <span class="sidebar-section-chevron">
+                  {{ sidebarSectionsOpen[sec.key] ? "▾" : "▸" }}
+                </span>
+                <span class="sidebar-section-title">{{ sec.label }}</span>
+                <span class="sidebar-section-count">{{ sec.items.length }}</span>
               </button>
-              <input
-                type="color"
-                class="color-picker-mini"
-                :value="proj.color || '#b85423'"
-                title="Change project color"
-                @click.stop
-                @input="
-                  updateProjectFields(proj, { color: $event.target.value })
-                "
-              />
-              <button
-                type="button"
-                class="sidebar-del-btn"
-                title="Delete project"
-                @click.stop="deleteProject(proj.id)"
-              >
-                ✕
-              </button>
-            </div>
-            <div class="picker-dates">
-              <span class="mono-dates">
-                {{ proj.start_date || "—" }} → {{ proj.target_date || "—" }}
-              </span>
-              <div class="picker-subtask-btns" @click.stop>
-                <button
-                  type="button"
-                  class="sidebar-timeline-subtask-toggle"
-                  :class="{ active: isProjectSubtasksVisible(proj.id) }"
-                  :title="
-                    isProjectSubtasksVisible(proj.id)
-                      ? 'Subtasks are visible on timeline · Click to hide'
-                      : 'Show subtasks on timeline even if project bar is unpinned'
-                  "
-                  @click="toggleProjectSubtasksVisibility(proj.id)"
-                >
-                  {{ isProjectSubtasksVisible(proj.id) ? 'Subtasks On' : 'Subtasks' }}
-                </button>
-                <button
-                  type="button"
-                  class="sidebar-subtask-pill"
-                  title="Open subtasks manager drawer"
+
+              <div v-if="sidebarSectionsOpen[sec.key]" class="sidebar-section-rows">
+                <div
+                  v-for="proj in sec.items"
+                  :key="proj.id"
+                  class="sidebar-flat-row"
+                  :class="{
+                    active: selectedProjectId === proj.id,
+                    'is-pinned-row': proj.is_pinned,
+                    'is-completed-project-row': isProjectCompleted(proj),
+                  }"
                   @click="openProjectDrawer(proj.id, 'subtasks')"
                 >
-                  {{ (projectTasksMap[proj.id] || []).length }} tasks
-                </button>
+                  <span
+                    class="sidebar-dot"
+                    :style="{ backgroundColor: proj.color || '#c2410c' }"
+                  />
+                  <span
+                    class="sidebar-row-name"
+                    :class="{ 'strikethrough-done': isProjectCompleted(proj) }"
+                    :title="proj.name"
+                  >
+                    {{ proj.name }}
+                  </span>
+                  <span
+                    v-if="proj.overdue_tasks > 0"
+                    class="sidebar-overdue-dot"
+                    :title="`${proj.overdue_tasks} overdue`"
+                  />
+                  <span class="sidebar-row-count">
+                    {{ (projectTasksMap[proj.id] || []).length }}
+                  </span>
+                  <div class="sidebar-row-hover-actions" @click.stop>
+                    <button
+                      type="button"
+                      class="sidebar-mini-action"
+                      :class="{ active: proj.is_pinned }"
+                      :title="proj.is_pinned ? 'Unpin from calendar' : 'Pin to calendar'"
+                      @click="updateProjectFields(proj, { is_pinned: !proj.is_pinned })"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 17v5" />
+                        <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      class="sidebar-mini-action"
+                      :class="{ active: isProjectSubtasksVisible(proj.id) }"
+                      :title="isProjectSubtasksVisible(proj.id) ? 'Hide tasks on calendar' : 'Show tasks on calendar'"
+                      @click="toggleProjectSubtasksVisibility(proj.id)"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="8" y1="6" x2="21" y2="6" />
+                        <line x1="8" y1="12" x2="21" y2="12" />
+                        <line x1="8" y1="18" x2="21" y2="18" />
+                        <line x1="3" y1="6" x2="3.01" y2="6" />
+                        <line x1="3" y1="12" x2="3.01" y2="12" />
+                        <line x1="3" y1="18" x2="3.01" y2="18" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      class="sidebar-mini-action"
+                      title="Archive project"
+                      @click="archiveProject(proj)"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="21 8 21 21 3 21 3 8" />
+                        <rect x="1" y="3" width="22" height="5" />
+                        <line x1="10" y1="12" x2="14" y2="12" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+          </template>
         </div>
+
+        <footer class="sidebar-footer">
+          <button
+            type="button"
+            class="sidebar-archive-btn"
+            @click="showArchiveModal = true"
+          >
+            <span>Archive Vault</span>
+            <span class="sidebar-section-count">{{ archivedProjects.length }}</span>
+          </button>
+        </footer>
       </aside>
 
-      <!-- Calendar Year / Month Surface -->
+      <!-- Calendar Surface -->
       <section class="calendar-timeline-surface">
         <!-- Calendar Toolbar -->
         <header class="calendar-toolbar">
           <div class="calendar-nav">
             <button
+              v-if="isSidebarCollapsed"
               type="button"
               class="nav-step-btn"
-              aria-label="Previous period"
-              @click="stepCalendar(-1)"
+              title="Show sidebar"
+              aria-label="Show sidebar"
+              @click="isSidebarCollapsed = false"
             >
-              ‹
+              ›
             </button>
+            <button
+              type="button"
+              class="btn-today-jump"
+              title="Jump to Today (T)"
+              @click="jumpToToday"
+            >
+              Today
+            </button>
+            <div class="calendar-step-pair">
+              <button
+                type="button"
+                class="nav-step-btn"
+                aria-label="Previous period"
+                @click="stepCalendar(-1)"
+              >
+                ‹
+              </button>
+              <button
+                type="button"
+                class="nav-step-btn"
+                aria-label="Next period"
+                @click="stepCalendar(1)"
+              >
+                ›
+              </button>
+            </div>
             <h2 class="calendar-current-label">
               {{
                 calendarScaleMode === "year"
-                  ? `${selectedYear} Annual Overview`
+                  ? `${selectedYear}`
+                  : calendarScaleMode === "day"
+                  ? dayViewSpec.rangeText
                   : calendarScaleMode === "week"
                   ? `${focusedWeekSpec.rangeText}`
                   : `${monthlyWeeksSpec.monthName} ${selectedYear}`
               }}
             </h2>
-            <button
-              type="button"
-              class="nav-step-btn"
-              aria-label="Next period"
-              @click="stepCalendar(1)"
-            >
-              ›
-            </button>
           </div>
 
           <div class="scale-Right-controls">
-            <!-- Milestone Layer Toggle -->
-            <button
-              type="button"
-              class="scale-btn milestone-layer-btn"
-              :class="{ active: calendarProjectDisplayMode === 'milestones' }"
-              :title="calendarProjectDisplayMode === 'milestones' ? 'Milestone Layer Active: Project spans hidden, showing milestone target dates' : 'Switch to Milestone Layer: Hide long spans and display milestone checkpoints'"
-              @click="calendarProjectDisplayMode = calendarProjectDisplayMode === 'milestones' ? 'all' : 'milestones'"
-            >
-              Milestones
-            </button>
-
             <!-- Subtask Filter: All | Active | Overdue | Done -->
-            <div class="segmented-scale" aria-label="Subtask Status Filter">
+            <div class="segmented-scale" aria-label="Task Status Filter">
               <button
                 type="button"
                 class="scale-btn"
@@ -4607,7 +5704,7 @@ onMounted(async () => {
                 type="button"
                 class="scale-btn scale-btn-overdue"
                 :class="{ active: taskFilterMode === 'overdue' }"
-                @click="taskFilterMode = 'overdue'"
+                @click="enterOverdueMode(false)"
               >
                 Overdue
                 <span v-if="totalOverdueTasksCount > 0" class="overdue-bubble">
@@ -4620,46 +5717,27 @@ onMounted(async () => {
                 :class="{ active: taskFilterMode === 'done' }"
                 @click="taskFilterMode = 'done'"
               >
-                Completed
+                Done
               </button>
             </div>
 
-            <div v-if="calendarScaleMode === 'month'" class="month-quick-pills">
-              <button
-                v-for="m in 12"
-                :key="m"
-                type="button"
-                class="month-pill"
-                :class="{ active: selectedMonth === m }"
-                @click="selectedMonth = m"
-              >
-                {{
-                  [
-                    "Jan",
-                    "Feb",
-                    "Mar",
-                    "Apr",
-                    "May",
-                    "Jun",
-                    "Jul",
-                    "Aug",
-                    "Sep",
-                    "Oct",
-                    "Nov",
-                    "Dec",
-                  ][m - 1]
-                }}
-              </button>
-            </div>
-
-            <div class="segmented-scale">
+            <!-- Scale Mode: Day | Week | Month | Year -->
+            <div class="segmented-scale" aria-label="Calendar Scale">
               <button
                 type="button"
                 class="scale-btn"
-                :class="{ active: calendarScaleMode === 'year' }"
-                @click="calendarScaleMode = 'year'"
+                :class="{ active: calendarScaleMode === 'day' }"
+                @click="switchToDayMode()"
               >
-                Year
+                Day
+              </button>
+              <button
+                type="button"
+                class="scale-btn"
+                :class="{ active: calendarScaleMode === 'week' }"
+                @click="switchToWeekMode"
+              >
+                Week
               </button>
               <button
                 type="button"
@@ -4672,23 +5750,187 @@ onMounted(async () => {
               <button
                 type="button"
                 class="scale-btn"
-                :class="{ active: calendarScaleMode === 'week' }"
-                @click="switchToWeekMode"
+                :class="{ active: calendarScaleMode === 'year' }"
+                @click="calendarScaleMode = 'year'"
               >
-                Week
+                Year
               </button>
+            </div>
+
+            <!-- Display Options Dropdown -->
+            <div ref="displayMenuRef" class="display-menu-wrap">
+              <button
+                type="button"
+                class="scale-btn display-menu-trigger"
+                :class="{ active: showDisplayMenu }"
+                @click.stop="showDisplayMenu = !showDisplayMenu"
+              >
+                Display ▾
+              </button>
+
+              <div v-if="showDisplayMenu" class="display-popover-menu" @click.stop>
+                <button
+                  type="button"
+                  class="display-menu-row"
+                  @click="
+                    calendarProjectDisplayMode =
+                      calendarProjectDisplayMode === 'milestones' ? 'all' : 'milestones'
+                  "
+                >
+                  <span>Milestone pins only</span>
+                  <span class="display-menu-state">
+                    {{ calendarProjectDisplayMode === "milestones" ? "On" : "Off" }}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  class="display-menu-row"
+                  @click="
+                    visibleTimelineSubtaskProjectIds.size > 0
+                      ? collapseAllTimelineSubtasks()
+                      : expandAllTimelineSubtasks()
+                  "
+                >
+                  <span>Show project subtasks</span>
+                  <span class="display-menu-state">
+                    {{ visibleTimelineSubtaskProjectIds.size > 0 ? "On" : "Off" }}
+                  </span>
+                </button>
+
+                <div v-if="calendarScaleMode === 'month'" class="display-month-jump">
+                  <span class="display-menu-section-label">Jump to month</span>
+                  <div class="display-month-grid">
+                    <button
+                      v-for="m in 12"
+                      :key="m"
+                      type="button"
+                      class="month-pill"
+                      :class="{ active: selectedMonth === m }"
+                      @click="
+                        selectedMonth = m;
+                        showDisplayMenu = false;
+                      "
+                    >
+                      {{
+                        [
+                          "Jan",
+                          "Feb",
+                          "Mar",
+                          "Apr",
+                          "May",
+                          "Jun",
+                          "Jul",
+                          "Aug",
+                          "Sep",
+                          "Oct",
+                          "Nov",
+                          "Dec",
+                        ][m - 1]
+                      }}
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <button
               type="button"
-              class="scale-btn subtasks-all-toggle-btn"
-              :title="visibleTimelineSubtaskProjectIds.size > 0 ? 'Hide subtasks on timeline' : 'Show subtasks on timeline'"
-              @click="visibleTimelineSubtaskProjectIds.size > 0 ? collapseAllTimelineSubtasks() : expandAllTimelineSubtasks()"
+              class="btn-ink-primary toolbar-add-task-btn"
+              title="Quick create task (N)"
+              @click="openQuickTaskPopover()"
             >
-              {{ visibleTimelineSubtaskProjectIds.size > 0 ? 'Hide Subtasks' : 'Show Subtasks' }}
+              + Task
             </button>
           </div>
         </header>
+
+        <!-- Prev / Next Overdue Task Navigator Bar (Visible in Overdue mode) -->
+        <div
+          v-if="taskFilterMode === 'overdue'"
+          class="overdue-navigator-bar"
+          role="region"
+          aria-label="Overdue task navigation"
+        >
+          <template v-if="activeOverdueTask">
+            <div class="overdue-nav-summary">
+              <span class="overdue-nav-counter">
+                {{ Math.min(activeOverdueIndex, overdueTasksList.length - 1) + 1 }} / {{ overdueTasksList.length }}
+              </span>
+              <button
+                type="button"
+                class="overdue-nav-current-btn"
+                title="Jump calendar to this overdue task's due date"
+                @click="jumpToOverdueTaskAt(activeOverdueIndex)"
+              >
+                <span
+                  class="overdue-nav-dot"
+                  :style="{ backgroundColor: activeOverdueTask.displayColor }"
+                ></span>
+                <strong class="overdue-nav-task-title">{{ activeOverdueTask.title }}</strong>
+                <span class="overdue-nav-meta">
+                  {{ activeOverdueTask.projectName }} · Due {{ formatEditorialDate(activeOverdueTask.due_date).short }}
+                </span>
+              </button>
+            </div>
+            <div class="overdue-nav-actions">
+              <button
+                type="button"
+                class="overdue-nav-step-btn"
+                title="Reschedule this task to Today"
+                @click="moveOverdueTaskToToday(activeOverdueTask)"
+              >
+                Move to Today
+              </button>
+              <button
+                type="button"
+                class="overdue-nav-step-btn"
+                :disabled="overdueTasksList.length <= 1"
+                title="Jump to previous overdue task"
+                @click="stepOverdueTask(-1)"
+              >
+                ‹ Prev overdue
+              </button>
+              <button
+                type="button"
+                class="overdue-nav-step-btn"
+                :disabled="overdueTasksList.length <= 1"
+                title="Jump to next overdue task"
+                @click="stepOverdueTask(1)"
+              >
+                Next overdue ›
+              </button>
+              <button
+                type="button"
+                class="overdue-nav-open-btn"
+                title="Open task drawer"
+                @click="openProjectDrawer(activeOverdueTask.project_id ?? 0, 'subtasks')"
+              >
+                Open
+              </button>
+              <button
+                type="button"
+                class="overdue-nav-close-btn"
+                aria-label="Exit overdue view"
+                title="Return to all tasks"
+                @click="exitOverdueFilter"
+              >
+                ✕
+              </button>
+            </div>
+          </template>
+          <template v-else>
+            <span class="overdue-nav-empty-text">
+              All caught up — no overdue tasks remaining.
+            </span>
+            <button
+              type="button"
+              class="overdue-nav-step-btn"
+              @click="exitOverdueFilter"
+            >
+              Show All Tasks
+            </button>
+          </template>
+        </div>
 
         <!-- ===============================================================
              MODE A: MONTHLY VIEW — 1 ROW PER WEEK (Click any date for Journal!)
@@ -4715,7 +5957,7 @@ onMounted(async () => {
               class="week-calendar-row"
             >
               <div class="week-side-cell">
-                <span class="week-badge">Week {{ week.weekNumber }}</span>
+                <span class="week-badge">W{{ String(week.weekNumber).padStart(2, "0") }}</span>
                 <span class="week-range-sub">
                   {{ week.days[0].monthShort }} {{ week.days[0].dayNum }} –
                   {{ week.days[6].monthShort }} {{ week.days[6].dayNum }}
@@ -4723,35 +5965,59 @@ onMounted(async () => {
               </div>
 
               <div class="week-seven-col-area">
-                <!-- Interactive Day Header Strip: Click ANY date to open/write that day's Journal -->
+                <!-- Interactive Day Header Strip: Click date to open Journal, or + to add task -->
                 <div class="week-day-numbers-strip">
-                  <button
+                  <div
                     v-for="day in week.days"
                     :key="day.iso"
-                    type="button"
+                    role="button"
+                    tabindex="0"
                     class="week-day-num-cell"
+                    :data-calendar-day-iso="day.iso"
                     :class="{
                       'outside-month': !day.inMonth,
+                      'is-today-cell': day.isToday,
                       'has-journal-entry': day.hasJournal,
                       'is-selected-journal-day':
                         isJournalDrawerOpen && selectedJournalDate === day.iso,
+                      'is-focused-overdue-day':
+                        taskFilterMode === 'overdue' && focusedOverdueDateIso === day.iso,
                     }"
                     :title="`Click to open journal for ${day.iso}`"
                     @click="openDailyJournalForDate(day.iso, true)"
+                    @keydown.enter.prevent="openDailyJournalForDate(day.iso, true)"
                   >
                     <div class="day-cell-top-row">
-                      <span class="day-number-pill">
+                      <span
+                        class="day-number-pill"
+                        :class="{ 'is-today-pill': day.isToday }"
+                      >
                         {{ day.dayNum }}
-                        <small v-if="!day.inMonth" class="day-month-hint">
+                        <small v-if="!day.inMonth || day.dayNum === 1" class="day-month-hint">
                           {{ day.monthShort }}
                         </small>
                       </span>
-                      <span v-if="day.hasJournal" class="day-journal-indicator" :title="day.journalTitle || 'Journal'">
-                        {{ day.journalTitle || "Journal" }}
-                      </span>
-                      <span v-else class="day-journal-hover-hint">
-                        + Note
-                      </span>
+                      <div class="day-cell-top-right">
+                        <span v-if="day.hasJournal" class="day-journal-indicator" :title="day.journalTitle || 'Journal'">
+                          {{ day.journalTitle || "Note" }}
+                        </span>
+                        <span v-else class="day-journal-hover-hint">
+                          Note
+                        </span>
+                        <button
+                          type="button"
+                          class="day-quick-add-btn"
+                          :title="`Add task on ${day.iso}`"
+                          @click.stop="
+                            openQuickTaskPopover({
+                              start_date: day.iso,
+                              due_date: day.iso,
+                            })
+                          "
+                        >
+                          +
+                        </button>
+                      </div>
                     </div>
                     <!-- Calendar Day Placed Stickers -->
                     <div v-if="getStickersForDate(day.iso).length" class="day-stickers-layer">
@@ -4769,7 +6035,7 @@ onMounted(async () => {
                     <p v-if="day.hasJournal && day.journalSnippet" class="day-journal-snippet">
                       {{ day.journalSnippet }}
                     </p>
-                  </button>
+                  </div>
                 </div>
 
                 <div class="week-items-stack-grid">
@@ -4778,7 +6044,13 @@ onMounted(async () => {
                       v-for="day in week.days"
                       :key="day.iso"
                       class="week-bg-col"
-                      @click="openDailyJournalForDate(day.iso, true)"
+                      :class="{
+                        'is-today-col': day.isToday,
+                        'is-drag-creating-day': isMonthCellDragHighlighted(week, day.iso),
+                      }"
+                      title="Click or drag across days to create a task"
+                      @pointerdown="startMonthDayDragCreate($event, week, day.iso)"
+                      @pointerenter="updateMonthDayDragCreate(week, day.iso, $event)"
                     />
                   </div>
 
@@ -4786,6 +6058,14 @@ onMounted(async () => {
                     v-for="item in week.items"
                     :key="item.uid"
                     class="week-item-card clickable-card"
+                    :data-overdue-task-id="
+                      item.taskId &&
+                      focusedOverdueDateIso &&
+                      week.weekStartIso <= focusedOverdueDateIso &&
+                      focusedOverdueDateIso <= week.weekEndIso
+                        ? item.taskId
+                        : undefined
+                    "
                     :class="{
                       'is-done-card': item.status === 'done',
                       'is-project-bar': item.kind === 'project',
@@ -4793,6 +6073,10 @@ onMounted(async () => {
                       'is-subtask-bar': item.kind === 'task',
                       'is-draggable-task': item.kind === 'task',
                       'is-overdue-card': item.isOverdue,
+                      'is-focused-overdue-card':
+                        taskFilterMode === 'overdue' &&
+                        item.taskId &&
+                        focusedOverdueTaskId === item.taskId,
                       'is-milestone-card': item.isMilestone,
                       'is-currently-dragged':
                         activeTimelineDrag &&
@@ -4867,10 +6151,10 @@ onMounted(async () => {
                           </svg>
                         </button>
                         <span
-                          class="color-badge-solid"
-                          :style="{ backgroundColor: item.color }"
+                          class="color-badge-mono"
+                          :style="{ color: item.color, borderColor: `${item.color}44` }"
                         >
-                          {{ item.code }} · Project
+                          {{ item.code }}
                         </span>
                       </template>
 
@@ -4918,6 +6202,10 @@ onMounted(async () => {
                         </span>
                       </template>
 
+                      <span v-if="item.timePrefix" class="task-time-badge">
+                        {{ item.timePrefix }}
+                      </span>
+
                       <strong
                         class="week-item-title"
                         :class="{
@@ -4941,7 +6229,7 @@ onMounted(async () => {
                         @click.stop="toggleProjectSubtasksVisibility(item.projectId)"
                       >
                         {{ isProjectSubtasksVisible(item.projectId) ? '▼' : '▶' }}
-                        {{ (projectTasksMap[item.projectId] || []).length }} subtasks
+                        {{ (projectTasksMap[item.projectId] || []).length }}
                       </button>
 
                       <!-- Quick drawer button to view/edit notes -->
@@ -5001,316 +6289,38 @@ onMounted(async () => {
         </div>
 
         <!-- ===============================================================
-             MODE B: WEEK VIEW — 1 FOCUSED 7-DAY TIMELINE ROW
+             MODE B: DAY & TIMED WEEK VIEWS (Hourly Time-Blocking Grid)
              =============================================================== -->
-        <div
-          v-else-if="calendarScaleMode === 'week'"
-          class="monthly-weeks-scroll-wrapper focused-week-scroll-wrapper"
-        >
-          <div class="monthly-weeks-container">
-            <div class="weekday-header-row">
-              <div class="week-label-col">Focus</div>
-              <div
-                v-for="dow in WEEKDAY_SHORT"
-                :key="dow"
-                class="weekday-col-head"
-              >
-                {{ dow }}
-              </div>
-            </div>
-
-            <div class="week-calendar-row is-focused-single-week">
-              <div class="week-side-cell">
-                <span class="week-badge">Week View</span>
-                <span class="week-range-sub">
-                  {{ focusedWeekSpec.days[0].monthShort }} {{ focusedWeekSpec.days[0].dayNum }} –
-                  {{ focusedWeekSpec.days[6].monthShort }} {{ focusedWeekSpec.days[6].dayNum }}
-                </span>
-              </div>
-
-              <div class="week-seven-col-area">
-                <!-- Interactive Day Header Strip: Click any date to open/write Journal -->
-                <div class="week-day-numbers-strip">
-                  <button
-                    v-for="day in focusedWeekSpec.days"
-                    :key="day.iso"
-                    type="button"
-                    class="week-day-num-cell"
-                    :class="{
-                      'has-journal-entry': day.hasJournal,
-                      'is-selected-journal-day':
-                        isJournalDrawerOpen && selectedJournalDate === day.iso,
-                    }"
-                    :title="`Click to open journal for ${day.iso}`"
-                    @click="openDailyJournalForDate(day.iso, true)"
-                  >
-                    <div class="day-cell-top-row">
-                      <span class="day-number-pill">
-                        {{ day.dayNum }}
-                        <small class="day-month-hint">
-                          {{ day.monthShort }}
-                        </small>
-                      </span>
-                      <span v-if="day.hasJournal" class="day-journal-indicator" :title="day.journalTitle || 'Journal'">
-                        {{ day.journalTitle || "Journal" }}
-                      </span>
-                      <span v-else class="day-journal-hover-hint">
-                        + Note
-                      </span>
-                    </div>
-                    <!-- Calendar Day Placed Stickers -->
-                    <div v-if="getStickersForDate(day.iso).length" class="day-stickers-layer">
-                      <span
-                        v-for="stk in getStickersForDate(day.iso)"
-                        :key="stk.id"
-                        class="calendar-day-sticker"
-                        :style="{ transform: `rotate(${stk.rotation_deg}deg) scale(${stk.scale / 100})` }"
-                        :title="`${stk.sticker_name} (Click to remove)`"
-                        @click.stop="handleRemovePlacement(stk.id)"
-                      >
-                        <img :src="stk.image_url" :alt="stk.sticker_name" class="day-sticker-img" />
-                      </span>
-                    </div>
-                    <p v-if="day.hasJournal && day.journalSnippet" class="day-journal-snippet">
-                      {{ day.journalSnippet }}
-                    </p>
-                  </button>
-                </div>
-
-                <div class="week-items-stack-grid">
-                  <div class="week-bg-guides">
-                    <div
-                      v-for="day in focusedWeekSpec.days"
-                      :key="day.iso"
-                      class="week-bg-col"
-                      @click="openDailyJournalForDate(day.iso, true)"
-                    />
-                  </div>
-
-                  <div
-                    v-for="item in focusedWeekSpec.items"
-                    :key="item.uid"
-                    class="week-item-card clickable-card"
-                    :class="{
-                      'is-done-card': item.status === 'done',
-                      'is-project-bar': item.kind === 'project',
-                      'is-draggable-project': item.kind === 'project',
-                      'is-subtask-bar': item.kind === 'task',
-                      'is-draggable-task': item.kind === 'task',
-                      'is-overdue-card': item.isOverdue,
-                      'is-milestone-card': item.isMilestone,
-                      'is-overdue-card': item.isOverdue,
-                      'is-milestone-card': item.isMilestone,
-                      'is-currently-dragged':
-                        activeTimelineDrag &&
-                        ((activeTimelineDrag.isTask && activeTimelineDrag.taskId === item.taskId) ||
-                         (!activeTimelineDrag.isTask && activeTimelineDrag.projectId === item.projectId)),
-                    }"
-                    :style="
-                      getCustomColorCardStyle(item.color, {
-                        gridColumn: `${item.startCol} / span ${item.spanCols}`,
-                        gridRow: item.trackRow,
-                      })
-                    "
-                    @pointerdown="
-                      item.kind === 'project'
-                        ? startTimelineDrag($event, item.projectId, 'move', 'week')
-                        : startTimelineDrag($event, item.projectId, 'move', 'week', item.taskId)
-                    "
-                    @click="handleTimelineCardClick(item)"
-                  >
-                    <!-- Left Resize Handle: Project or Subtask -->
-                    <div
-                      class="timeline-resize-handle handle-left"
-                      :title="item.kind === 'project' ? 'Drag to stretch project start date' : 'Drag to stretch subtask start date'"
-                      @pointerdown.stop.prevent="
-                        item.kind === 'project'
-                          ? startTimelineDrag(
-                              $event,
-                              item.projectId,
-                              'resize-start',
-                              'week'
-                            )
-                          : startTimelineDrag(
-                              $event,
-                              item.projectId,
-                              'resize-start',
-                              'week',
-                              item.taskId
-                            )
-                      "
-                    />
-
-                    <div class="week-item-main">
-                      <template v-if="item.kind === 'project'">
-                        <button
-                          type="button"
-                          class="subtask-check-btn"
-                          :class="{ checked: item.status === 'done' }"
-                          :style="
-                            item.status === 'done'
-                              ? {
-                                  backgroundColor: item.color,
-                                  borderColor: item.color,
-                                }
-                              : { borderColor: item.color }
-                          "
-                          :title="
-                            item.status === 'done'
-                              ? 'Mark project active'
-                              : 'Mark project done'
-                          "
-                          @click.stop="toggleProjectDoneStatusById(item.projectId)"
-                        >
-                          <svg
-                            v-if="item.status === 'done'"
-                            width="11"
-                            height="11"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="3"
-                          >
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
-                        </button>
-                        <span
-                          class="color-badge-solid"
-                          :style="{ backgroundColor: item.color }"
-                        >
-                          {{ item.code }} · Project
-                        </span>
-                      </template>
-
-                      <template v-else-if="item.kind === 'milestone'">
-                        <span class="milestone-diamond-badge" :style="{ backgroundColor: item.color }">
-                          ◆
-                        </span>
-                      </template>
-                      <template v-else>
-                        <button
-                          type="button"
-                          class="subtask-check-btn"
-                          :class="{ checked: item.status === 'done' }"
-                          :style="
-                            item.status === 'done'
-                              ? {
-                                  backgroundColor: item.color,
-                                  borderColor: item.color,
-                                }
-                              : { borderColor: item.color }
-                          "
-                          title="Toggle subtask done"
-                          @click.stop="
-                            toggleSubtaskStatus(item.projectId, item.taskId)
-                          "
-                        >
-                          <svg
-                            v-if="item.status === 'done'"
-                            width="11"
-                            height="11"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="3"
-                          >
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
-                        </button>
-                        <span
-                          v-if="item.code"
-                          class="color-badge-mono"
-                          :style="{ color: item.color, borderColor: `${item.color}44` }"
-                        >
-                          {{ item.code }}
-                        </span>
-                      </template>
-
-                      <strong
-                        class="week-item-title"
-                        :class="{
-                          'strikethrough-done': item.status === 'done',
-                        }"
-                      >
-                        {{ item.title }}
-                      </strong>
-
-                      <span v-if="item.isOverdue" class="overdue-tag-pill">
-                        Overdue
-                      </span>
-
-                      <span v-if="item.isOverdue" class="overdue-tag-pill">
-                        Overdue
-                      </span>
-
-                      <!-- Subtasks toggle button pill right on the project card -->
-                      <button
-                        v-if="item.kind === 'project' && (projectTasksMap[item.projectId] || []).length > 0"
-                        type="button"
-                        class="subtasks-toggle-badge"
-                        :class="{ 'is-expanded': isProjectSubtasksVisible(item.projectId) }"
-                        :title="isProjectSubtasksVisible(item.projectId) ? 'Click to hide subtasks on timeline' : 'Click to show subtasks on timeline'"
-                        @click.stop="toggleProjectSubtasksVisibility(item.projectId)"
-                      >
-                        {{ isProjectSubtasksVisible(item.projectId) ? '▼' : '▶' }}
-                        {{ (projectTasksMap[item.projectId] || []).length }} subtasks
-                      </button>
-
-                      <!-- Quick drawer button to view/edit notes -->
-                      <button
-                        v-if="item.kind === 'project'"
-                        type="button"
-                        class="card-drawer-open-btn"
-                        title="Open project notes and drawer"
-                        @click.stop="openProjectDrawer(item.projectId, 'subtasks')"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                        </svg>
-                      </button>
-                    </div>
-
-                    <div class="week-item-meta">
-                      <span
-                        v-if="item.kind === 'task'"
-                        class="task-proj-origin"
-                        :style="{ color: item.color }"
-                      >
-                        {{ item.projectName }}
-                      </span>
-                      <span class="item-dates-label">{{ item.dateRangeText }}</span>
-                    </div>
-
-                    <!-- Right Resize Handle: Project or Subtask -->
-                    <div
-                      class="timeline-resize-handle handle-right"
-                      :title="item.kind === 'project' ? 'Drag to stretch project target date' : 'Drag to stretch subtask due date'"
-                      @pointerdown.stop.prevent="
-                        item.kind === 'project'
-                          ? startTimelineDrag(
-                              $event,
-                              item.projectId,
-                              'resize-end',
-                              'week'
-                            )
-                          : startTimelineDrag(
-                              $event,
-                              item.projectId,
-                              'resize-end',
-                              'week',
-                              item.taskId
-                            )
-                      "
-                    />
-                  </div>
-
-                  <div v-if="focusedWeekSpec.items.length === 0" class="week-empty-spacer" />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <CalendarTimeGrid
+          v-else-if="calendarScaleMode === 'day' || calendarScaleMode === 'week'"
+          :days="calendarScaleMode === 'day' ? dayViewSpec.days : focusedWeekSpec.days"
+          :all-day-items="calendarScaleMode === 'day' ? dayViewSpec.allDayItems : focusedWeekAllDayItems"
+          :timed-tasks-by-date="timedTasksByDate"
+          :today-iso="todayIso"
+          :task-filter-mode="taskFilterMode"
+          :focused-overdue-task-id="focusedOverdueTaskId"
+          :focused-overdue-date-iso="focusedOverdueDateIso"
+          :project-tasks-map="projectTasksMap"
+          :visible-subtask-project-ids="visibleTimelineSubtaskProjectIds"
+          :active-timeline-drag="activeTimelineDrag"
+          @quick-create="openQuickTaskPopover($event)"
+          @open-journal="openDailyJournalForDate($event, true)"
+          @card-click="handleTimelineCardClick($event)"
+          @toggle-task="toggleSubtaskStatus($event.projectId, $event.taskId)"
+          @toggle-project-done="toggleProjectDoneStatusById($event)"
+          @toggle-project-subtasks="toggleProjectSubtasksVisibility($event)"
+          @open-project-drawer="openProjectDrawer($event, 'subtasks')"
+          @update-timed-task="handleUpdateTimedTask($event)"
+          @start-allday-drag="
+            startTimelineDrag(
+              $event.event,
+              $event.projectId,
+              $event.type,
+              calendarScaleMode,
+              $event.taskId
+            )
+          "
+        />
 
         <!-- ===============================================================
              MODE C: YEAR VIEW — 12 MONTH COLUMNS (JAN .. DEC)
@@ -5645,7 +6655,7 @@ onMounted(async () => {
                 v-model="journalDraftTitle"
                 type="text"
                 class="journal-drawer-title-input editorial-serif-drawer-title"
-                :placeholder="`Journal — ${selectedJournalDate}`"
+                :placeholder="formattedJournalHeading.full"
                 title="Click to edit journal title"
                 @blur="saveDailyJournalEntry"
               />
@@ -5719,7 +6729,7 @@ onMounted(async () => {
                 <span>Templates ▾</span>
               </button>
               <div v-if="showTemplateMenu" class="template-dropdown-menu">
-                <div class="template-menu-header">APPLY TEMPLATE</div>
+                <div class="template-menu-header">Templates</div>
                 <button
                   v-for="tpl in availableTemplates"
                   :key="tpl.id"
@@ -5837,7 +6847,7 @@ onMounted(async () => {
         <div class="slideover-body">
           <!-- Interactive Habit Quick Bar in Drawer -->
           <div v-if="activeHabits.length > 0" class="journal-habit-quick-bar drawer-habit-bar">
-            <span class="habit-bar-kicker">HABITS</span>
+            <span class="habit-bar-kicker">Habits</span>
             <div class="habit-pills-list">
               <button
                 v-for="h in activeHabits"
@@ -5892,7 +6902,7 @@ onMounted(async () => {
             :class="{ 'is-empty': !journalDraftMd || !journalDraftMd.trim() }"
             title="Click to write or edit markdown"
             @scroll="handleJournalContentScroll"
-            @click="startEditingJournal(true)"
+            @click="handleJournalPreviewClick($event, true)"
           >
             <div
               v-if="journalDraftMd && journalDraftMd.trim()"
@@ -5954,6 +6964,7 @@ onMounted(async () => {
           </div>
           <div class="drawer-header-right-actions">
             <button
+              v-if="selectedProject.id !== 0"
               type="button"
               class="project-status-toggle-btn"
               :class="{ done: isProjectCompleted(selectedProject) }"
@@ -5967,10 +6978,20 @@ onMounted(async () => {
               {{
                 isProjectCompleted(selectedProject)
                   ? "✓ Completed · Reopen"
-                  : "✓ Mark Project Done"
+                  : "✓ Mark Done"
               }}
             </button>
             <button
+              v-if="selectedProject.id !== 0"
+              type="button"
+              class="btn-editorial-ghost"
+              title="Archive project into Archive Vault"
+              @click="archiveProject(selectedProject)"
+            >
+              Archive
+            </button>
+            <button
+              v-if="selectedProject.id !== 0"
               type="button"
               class="delete-project-btn"
               title="Delete this project"
@@ -5989,7 +7010,7 @@ onMounted(async () => {
           </div>
         </header>
 
-        <div class="slideover-project-desc-row">
+        <div v-if="selectedProject.id !== 0" class="slideover-project-desc-row">
           <textarea
             class="inspector-proj-desc-input"
             :value="selectedProject.description || ''"
@@ -6003,13 +7024,31 @@ onMounted(async () => {
           ></textarea>
         </div>
 
-        <div class="slideover-project-settings">
+        <div v-if="selectedProject.id !== 0" class="slideover-project-settings">
+          <div class="drawer-area-row">
+            <label class="date-mini drawer-area-label">
+              <span>Folder</span>
+              <input
+                type="text"
+                list="project-area-suggestions"
+                class="input-minimal drawer-area-input"
+                :value="selectedProject.area || ''"
+                placeholder="e.g. Work, School, Personal…"
+                @change="
+                  updateProjectFields(selectedProject, {
+                    area: $event.target.value,
+                  })
+                "
+              />
+            </label>
+          </div>
+
           <div class="swatch-row">
             <span class="swatch-label">Tone:</span>
             <input
               type="color"
               class="color-picker-mini"
-              :value="selectedProject.color || '#b85423'"
+              :value="selectedProject.color || '#c2410c'"
               @input="
                 updateProjectFields(selectedProject, {
                   color: $event.target.value,
@@ -6138,6 +7177,37 @@ onMounted(async () => {
                 <span>Due</span>
                 <input v-model="newSubtask.due_date" type="date" />
               </label>
+              <label class="date-mini">
+                <span>From</span>
+                <input v-model="newSubtask.start_time" type="time" />
+              </label>
+              <label class="date-mini">
+                <span>To</span>
+                <input v-model="newSubtask.end_time" type="time" />
+              </label>
+              <label class="date-mini">
+                <span>Priority</span>
+                <select v-model="newSubtask.priority" class="input-minimal">
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="urgent">Urgent</option>
+                </select>
+              </label>
+              <label
+                class="deadline-only-toggle"
+                title="Only show on timeline as a single-day deadline on the due date"
+              >
+                <input v-model="newSubtask.deadline_only" type="checkbox" />
+                <span>Deadline only</span>
+              </label>
+              <label
+                class="deadline-only-toggle"
+                title="Render as milestone diamond"
+              >
+                <input v-model="newSubtask.is_milestone" type="checkbox" />
+                <span>Milestone</span>
+              </label>
               <div class="swatch-row">
                 <input
                   v-model="newSubtask.color"
@@ -6154,7 +7224,7 @@ onMounted(async () => {
                   @click="newSubtask.color = sw"
                 />
               </div>
-              <button type="submit" class="btn-orange-primary">
+              <button type="submit" class="btn-ink-primary">
                 Add {{ nextSubtaskCode }}
               </button>
             </div>
@@ -6237,6 +7307,75 @@ onMounted(async () => {
                       "
                     />
                   </label>
+                  <label class="date-mini">
+                    <span>From</span>
+                    <input
+                      type="time"
+                      :value="sub.start_time || ''"
+                      @change="
+                        updateSubtaskFields(selectedProject.id, sub.id, {
+                          start_time: $event.target.value || null,
+                        })
+                      "
+                    />
+                  </label>
+                  <label class="date-mini">
+                    <span>To</span>
+                    <input
+                      type="time"
+                      :value="sub.end_time || ''"
+                      @change="
+                        updateSubtaskFields(selectedProject.id, sub.id, {
+                          end_time: $event.target.value || null,
+                        })
+                      "
+                    />
+                  </label>
+                  <select
+                    :value="sub.priority || 'medium'"
+                    class="input-minimal subtask-priority-select"
+                    title="Task priority"
+                    @change="
+                      updateSubtaskFields(selectedProject.id, sub.id, {
+                        priority: $event.target.value,
+                      })
+                    "
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Med</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
+                  </select>
+                  <label
+                    class="deadline-only-toggle"
+                    title="Only show on timeline as a single-day deadline on the due date"
+                  >
+                    <input
+                      type="checkbox"
+                      :checked="Boolean(sub.deadline_only)"
+                      @change="
+                        updateSubtaskFields(selectedProject.id, sub.id, {
+                          deadline_only: $event.target.checked,
+                        })
+                      "
+                    />
+                    <span>Deadline</span>
+                  </label>
+                  <label
+                    class="deadline-only-toggle"
+                    title="Show as milestone diamond"
+                  >
+                    <input
+                      type="checkbox"
+                      :checked="Boolean(sub.is_milestone)"
+                      @change="
+                        updateSubtaskFields(selectedProject.id, sub.id, {
+                          is_milestone: $event.target.checked,
+                        })
+                      "
+                    />
+                    <span>Milestone</span>
+                  </label>
                   <input
                     type="color"
                     class="color-picker-mini"
@@ -6267,6 +7406,7 @@ onMounted(async () => {
                   class="subtask-note-display clickable-note"
                   :class="{ 'is-empty': !sub.description || !sub.description.trim() }"
                   title="Double-click to edit note for this subtask"
+                  @click="handleSubtaskNotePreviewClick($event, sub)"
                   @dblclick="startEditingSubtaskNote(sub.id)"
                 >
                   <div
@@ -6339,6 +7479,7 @@ onMounted(async () => {
                   !activeNote.content_md || !activeNote.content_md.trim(),
               }"
               title="Double-click to open notepad"
+              @click="handleProjectNotePreviewClick($event)"
               @dblclick="startEditingProjectNote"
             >
               <div
@@ -6614,7 +7755,7 @@ onMounted(async () => {
           <div class="auth-modal-danger-divider" />
           <div class="auth-modal-danger-zone">
             <div class="danger-zone-header">
-              <span class="danger-kicker">DANGER ZONE</span>
+              <span class="danger-kicker">Danger zone</span>
               <p class="danger-desc">
                 Need a fresh start? Clear all projects, tasks, notes, journal entries, and habits.
               </p>
@@ -7262,5 +8403,157 @@ onMounted(async () => {
       @delete-sticker="handleDeleteSticker"
       @remove-placement="handleRemovePlacement"
     />
+
+    <!-- Quick Calendar Task Creation Popover -->
+    <QuickTaskPopover
+      :open="quickTaskModalOpen"
+      :initial-draft="quickTaskDraft"
+      :projects="projects.filter((p) => p.status !== 'archived')"
+      @close="quickTaskModalOpen = false"
+      @submit="handleQuickTaskSubmit"
+    />
+
+    <!-- Global Command Palette (Ctrl/Cmd + K) -->
+    <CommandPalette
+      :open="showCommandPalette"
+      :projects="projects.filter((p) => p.status !== 'archived')"
+      :overdue-count="totalOverdueTasksCount"
+      :api-base="API_BASE"
+      :auth-headers="getAuthHeaders()"
+      @close="showCommandPalette = false"
+      @select-action="handleCommandPaletteAction"
+    />
+
+    <!-- Archive Vault Modal -->
+    <ArchiveVaultModal
+      :open="showArchiveModal"
+      :archived-projects="archivedProjects"
+      :project-tasks-map="projectTasksMap"
+      @close="showArchiveModal = false"
+      @restore="restoreArchivedProject($event)"
+      @delete-permanent="deleteProject($event)"
+    />
+
+    <!-- Clean New Project Modal (Projects Board / List) -->
+    <div
+      v-if="showNewProjectModal"
+      class="quick-popover-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label="New Project"
+      @click.self="showNewProjectModal = false"
+    >
+      <form class="quick-task-popover new-project-modal" @submit.prevent="createNewProject(null)">
+        <div class="quick-popover-top">
+          <span class="quick-popover-kicker">New Project</span>
+          <button
+            type="button"
+            class="close-drawer-btn"
+            @click="showNewProjectModal = false"
+          >
+            ✕
+          </button>
+        </div>
+        <input
+          v-model="newProject.name"
+          type="text"
+          class="quick-popover-title-input"
+          placeholder="Project name…"
+          required
+          autofocus
+        />
+        <input
+          v-model="newProject.description"
+          type="text"
+          class="input-minimal"
+          placeholder="Scope or objective (optional)…"
+        />
+        <div class="quick-popover-row quick-dates-row">
+          <label class="quick-field">
+            <span>Folder / Area</span>
+            <input
+              v-model="newProject.area"
+              type="text"
+              list="project-area-suggestions"
+              class="input-minimal"
+              placeholder="Work, School, Personal…"
+            />
+          </label>
+          <label class="quick-field">
+            <span>Status</span>
+            <select v-model="newProject.status" class="input-minimal">
+              <option value="planned">Planned</option>
+              <option value="active">Active</option>
+              <option value="on_hold">On Hold</option>
+              <option value="completed">Completed</option>
+            </select>
+          </label>
+        </div>
+        <div class="quick-popover-row quick-dates-row">
+          <label class="quick-field">
+            <span>Start date</span>
+            <input v-model="newProject.start_date" type="date" class="input-minimal" />
+          </label>
+          <label class="quick-field">
+            <span>Target date</span>
+            <input v-model="newProject.target_date" type="date" class="input-minimal" />
+          </label>
+        </div>
+        <div class="swatch-row">
+          <span class="swatch-label">Tone</span>
+          <input v-model="newProject.color" type="color" class="color-picker-mini" />
+          <button
+            v-for="sw in COLOR_SWATCHES"
+            :key="sw"
+            type="button"
+            class="color-swatch-dot"
+            :class="{ active: newProject.color === sw }"
+            :style="{ backgroundColor: sw }"
+            @click="newProject.color = sw"
+          />
+        </div>
+        <label class="pin-check-inline">
+          <input v-model="newProject.is_pinned" type="checkbox" />
+          <span>Pin to Calendar Timeline</span>
+        </label>
+        <div class="quick-popover-footer">
+          <button type="button" class="btn-editorial-ghost" @click="showNewProjectModal = false">
+            Cancel
+          </button>
+          <button type="submit" class="btn-ink-primary">
+            Create Project
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Folder / Area Suggestions Datalist -->
+    <datalist id="project-area-suggestions">
+      <option v-for="ar in projectAreas" :key="ar" :value="ar" />
+      <option value="Work" />
+      <option value="School" />
+      <option value="Personal" />
+    </datalist>
+
+    <!-- Undo / Notification Snackbar -->
+    <div v-if="toastNotification" class="toast-snackbar" role="status" aria-live="polite">
+      <span class="toast-message">{{ toastNotification.message }}</span>
+      <button
+        v-if="toastNotification.undoLabel && toastNotification.undoFn"
+        type="button"
+        class="toast-undo-btn"
+        @click="triggerToastUndo"
+      >
+        {{ toastNotification.undoLabel }}
+      </button>
+      <button
+        type="button"
+        class="toast-close-btn"
+        aria-label="Dismiss"
+        @click="dismissToast"
+      >
+        ✕
+      </button>
+    </div>
   </div>
 </template>
